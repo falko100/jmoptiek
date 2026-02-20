@@ -27,16 +27,19 @@ export interface GlassesParams {
     baseRotY: number;
     baseRotZ: number;
     occluderZ: number;
+    /** Clip the glasses at this depth behind the face (fraction of eye distance). 0 = no clipping. */
+    clipDepth: number;
 }
 
 export const DEFAULT_PARAMS: GlassesParams = {
-    scale: 4.5,
-    offsetY: -0.93,
+    scale: 1.80,
+    offsetY: 0.02,
     depth: -0.45,
     baseRotX: -4,
     baseRotY: -2,
     baseRotZ: 0,
     occluderZ: 0,
+    clipDepth: 0.55,
 };
 
 // ---- Occluder material (invisible, depth-only) ----
@@ -110,6 +113,9 @@ export class GlassesRenderer {
     private activeOccluders: THREE.Object3D[] = [];
     private _showOccluder = false;
 
+    /** Clipping plane used to cut off the back of the glasses */
+    private clipPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+
     params: GlassesParams = { ...DEFAULT_PARAMS };
 
     private canvasW = 1;
@@ -126,6 +132,7 @@ export class GlassesRenderer {
         this.renderer.setPixelRatio(1);
         this.renderer.setClearColor(0x000000, 0);
         this.renderer.sortObjects = true;
+        this.renderer.localClippingEnabled = true;
 
         // ---- model-viewer style rendering ----
         this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -358,8 +365,17 @@ export class GlassesRenderer {
             wrapper.add(pivot);
             wrapper.visible = false;
             wrapper.renderOrder = 1;
+            const clipPlaneRef = this.clipPlane;
             wrapper.traverse((child) => {
-                if (child instanceof THREE.Mesh) child.renderOrder = 1;
+                if (child instanceof THREE.Mesh) {
+                    child.renderOrder = 1;
+                    // Apply clipping plane to every material
+                    const mats = Array.isArray(child.material) ? child.material : [child.material];
+                    for (const mat of mats) {
+                        mat.clippingPlanes = [clipPlaneRef];
+                        mat.clipShadows = true;
+                    }
+                }
             });
             this.scene.add(wrapper);
 
@@ -488,6 +504,38 @@ export class GlassesRenderer {
     render(poses: FacePose[]): void {
         const now = performance.now();
 
+        // ---- Update clipping plane ----
+        if (this.params.clipDepth > 0 && poses.length > 0) {
+            const pose = poses[0];
+            const faceRotation = this.getFaceRotation(pose);
+
+            // Plane normal = face forward direction (toward camera)
+            const normal = new THREE.Vector3(0, 0, 1).applyEuler(faceRotation);
+
+            // Glasses position in ortho space
+            const yOff = pose.eyeDistance * this.params.offsetY;
+            const gx = pose.center.x - this.canvasW / 2;
+            const gy = -(pose.center.y + yOff - this.canvasH / 2);
+            const forward = normal.clone();
+            const depthOff = pose.eyeDistance * this.params.depth;
+            const glassesPos = new THREE.Vector3(
+                gx + forward.x * depthOff,
+                gy + forward.y * depthOff,
+                forward.z * depthOff,
+            );
+
+            // Position the plane behind the glasses center by clipDepth
+            const clipOffset = pose.eyeDistance * this.params.clipDepth;
+            const planePoint = glassesPos.clone().add(normal.clone().multiplyScalar(-clipOffset));
+
+            this.clipPlane.normal.copy(normal);
+            this.clipPlane.constant = -planePoint.dot(normal);
+        } else {
+            // No clipping — push the plane far away so it clips nothing
+            this.clipPlane.normal.set(0, 0, 1);
+            this.clipPlane.constant = 99999;
+        }
+
         // ---- Occluders ----
         this.renderOccluders(poses);
 
@@ -561,7 +609,7 @@ export class GlassesRenderer {
 
             const faceRotation = this.getFaceRotation(pose);
             const s = (pose.faceHeight / this.occluderBaseHeight) * 0.9;
-            occ.scale.setScalar(s);
+            occ.scale.set(s * 0.8, s, s);
             occ.rotation.copy(faceRotation);
 
             const ox = pose.faceCenter.x - this.canvasW / 2;

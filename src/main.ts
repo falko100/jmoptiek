@@ -102,6 +102,7 @@ async function start(): Promise<void> {
         await selector.init();
 
         const tweakPanel = createTweakPanel(glassesRenderer);
+        selector.setTweakPanel(tweakPanel);
 
         // Corner buttons + gesture detection
         const cornerButtons = createCornerButtons();
@@ -115,7 +116,7 @@ async function start(): Promise<void> {
             }
             if (e.key === 't' || e.key === 'T') {
                 // Toggle tweak panel
-                tweakPanel.classList.toggle('hidden');
+                tweakPanel.element.classList.toggle('hidden');
             }
         });
 

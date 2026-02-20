@@ -14,6 +14,7 @@ const SLIDERS: SliderDef[] = [
     { key: 'scale',    label: 'Scale',       min: 0.5, max: 8,    step: 0.05 },
     { key: 'offsetY',  label: 'Offset Y',    min: -2,  max: 2,    step: 0.01 },
     { key: 'depth',    label: 'Depth',       min: -3,  max: 3,    step: 0.01 },
+    { key: 'clipDepth', label: 'Clip',        min: 0,   max: 3,    step: 0.01 },
     { key: 'baseRotX', label: 'Rot X°',      min: -180, max: 180, step: 1 },
     { key: 'baseRotY', label: 'Rot Y°',      min: -180, max: 180, step: 1 },
     { key: 'baseRotZ', label: 'Rot Z°',      min: -180, max: 180, step: 1 },
@@ -38,9 +39,17 @@ function saveParams(params: GlassesParams): void {
     } catch { /* ignore */ }
 }
 
+// ---- Public interface ----
+
+export interface TweakPanel {
+    element: HTMLElement;
+    /** Sync all slider UI elements to match current renderer params */
+    syncSliders: () => void;
+}
+
 // ---- Panel ----
 
-export function createTweakPanel(renderer: GlassesRenderer): HTMLElement {
+export function createTweakPanel(renderer: GlassesRenderer): TweakPanel {
     const saved = loadSavedParams();
     renderer.updateParams(saved);
 
@@ -52,36 +61,20 @@ export function createTweakPanel(renderer: GlassesRenderer): HTMLElement {
     heading.textContent = 'Glasses Tweaks';
     panel.appendChild(heading);
 
+    // Track slider elements for syncing
+    const sliderInputs: HTMLInputElement[] = [];
+    const sliderDisplays: HTMLSpanElement[] = [];
+    const allSliderDefs: SliderDef[] = [];
+
     // Glasses sliders
     for (const def of SLIDERS) {
-        const row = document.createElement('div');
-        row.className = 'tweak-row';
-
-        const label = document.createElement('label');
-        label.textContent = def.label;
-        row.appendChild(label);
-
-        const input = document.createElement('input');
-        input.type = 'range';
-        input.min = String(def.min);
-        input.max = String(def.max);
-        input.step = String(def.step);
-        input.value = String(saved[def.key]);
-
-        const valueDisplay = document.createElement('span');
-        valueDisplay.className = 'tweak-value';
-        valueDisplay.textContent = formatValue(saved[def.key], def.step);
-
-        input.addEventListener('input', () => {
-            const val = parseFloat(input.value);
-            valueDisplay.textContent = formatValue(val, def.step);
+        const { input, valueDisplay } = createSliderRow(panel, def, saved[def.key], (val) => {
             renderer.updateParams({ [def.key]: val });
             saveParams(renderer.params);
         });
-
-        row.appendChild(input);
-        row.appendChild(valueDisplay);
-        panel.appendChild(row);
+        sliderInputs.push(input);
+        sliderDisplays.push(valueDisplay);
+        allSliderDefs.push(def);
     }
 
     // Occluder debug toggle
@@ -112,35 +105,14 @@ export function createTweakPanel(renderer: GlassesRenderer): HTMLElement {
 
     // Occluder Z slider
     {
-        const def = { key: 'occluderZ' as keyof GlassesParams, label: 'Offset Z', min: -3, max: 3, step: 0.01 };
-        const row = document.createElement('div');
-        row.className = 'tweak-row';
-
-        const label = document.createElement('label');
-        label.textContent = def.label;
-        row.appendChild(label);
-
-        const input = document.createElement('input');
-        input.type = 'range';
-        input.min = String(def.min);
-        input.max = String(def.max);
-        input.step = String(def.step);
-        input.value = String(saved[def.key]);
-
-        const valueDisplay = document.createElement('span');
-        valueDisplay.className = 'tweak-value';
-        valueDisplay.textContent = formatValue(saved[def.key], def.step);
-
-        input.addEventListener('input', () => {
-            const val = parseFloat(input.value);
-            valueDisplay.textContent = formatValue(val, def.step);
+        const def: SliderDef = { key: 'occluderZ', label: 'Offset Z', min: -3, max: 3, step: 0.01 };
+        const { input, valueDisplay } = createSliderRow(panel, def, saved[def.key], (val) => {
             renderer.updateParams({ [def.key]: val });
             saveParams(renderer.params);
         });
-
-        row.appendChild(input);
-        row.appendChild(valueDisplay);
-        panel.appendChild(row);
+        sliderInputs.push(input);
+        sliderDisplays.push(valueDisplay);
+        allSliderDefs.push(def);
     }
 
     // ---- Post-processing toggles ----
@@ -218,23 +190,60 @@ export function createTweakPanel(renderer: GlassesRenderer): HTMLElement {
     resetBtn.addEventListener('click', () => {
         renderer.updateParams({ ...DEFAULT_PARAMS });
         saveParams(renderer.params);
-
-        const allSliders = [...SLIDERS, { key: 'occluderZ' as keyof GlassesParams, step: 0.01 }];
-        const inputs = panel.querySelectorAll('input[type="range"]');
-        const values = panel.querySelectorAll('.tweak-value');
-        allSliders.forEach((def, i) => {
-            const inp = inputs[i] as HTMLInputElement;
-            const val = values[i] as HTMLSpanElement;
-            if (inp && val) {
-                inp.value = String(DEFAULT_PARAMS[def.key]);
-                val.textContent = formatValue(DEFAULT_PARAMS[def.key], def.step);
-            }
-        });
+        syncSliders();
     });
     panel.appendChild(resetBtn);
 
     document.body.appendChild(panel);
-    return panel;
+
+    /** Sync all slider UI elements to the current renderer.params values */
+    function syncSliders(): void {
+        for (let i = 0; i < allSliderDefs.length; i++) {
+            const def = allSliderDefs[i];
+            const val = renderer.params[def.key];
+            sliderInputs[i].value = String(val);
+            sliderDisplays[i].textContent = formatValue(val, def.step);
+        }
+    }
+
+    return { element: panel, syncSliders };
+}
+
+function createSliderRow(
+    parent: HTMLElement,
+    def: SliderDef,
+    initialValue: number,
+    onChange: (val: number) => void,
+): { input: HTMLInputElement; valueDisplay: HTMLSpanElement } {
+    const row = document.createElement('div');
+    row.className = 'tweak-row';
+
+    const label = document.createElement('label');
+    label.textContent = def.label;
+    row.appendChild(label);
+
+    const input = document.createElement('input');
+    input.type = 'range';
+    input.min = String(def.min);
+    input.max = String(def.max);
+    input.step = String(def.step);
+    input.value = String(initialValue);
+
+    const valueDisplay = document.createElement('span');
+    valueDisplay.className = 'tweak-value';
+    valueDisplay.textContent = formatValue(initialValue, def.step);
+
+    input.addEventListener('input', () => {
+        const val = parseFloat(input.value);
+        valueDisplay.textContent = formatValue(val, def.step);
+        onChange(val);
+    });
+
+    row.appendChild(input);
+    row.appendChild(valueDisplay);
+    parent.appendChild(row);
+
+    return { input, valueDisplay };
 }
 
 function formatValue(val: number, step: number): string {
