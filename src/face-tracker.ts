@@ -42,10 +42,22 @@ export class FaceTracker {
      * Compute a FacePose for every detected face.
      * Coordinates are in canvas pixel space with mirrored X.
      */
+    /**
+     * Compute a FacePose for every detected face.
+     * Landmarks are mapped through the cover transform so they align with
+     * the video as drawn on the canvas.
+     *
+     * @param drawW  Cover-scaled video width in canvas pixels
+     * @param drawH  Cover-scaled video height in canvas pixels
+     * @param offsetX  Horizontal offset of the cover-drawn video
+     * @param offsetY  Vertical offset of the cover-drawn video
+     */
     computePoses(
         result: FaceLandmarkerResult,
-        canvasWidth: number,
-        canvasHeight: number,
+        drawW: number,
+        drawH: number,
+        offsetX: number,
+        offsetY: number,
     ): FacePose[] {
         if (!result.faceLandmarks?.length) return [];
 
@@ -58,33 +70,31 @@ export class FaceTracker {
             const leftTemple = lm[FaceLandmark.LEFT_TEMPLE];
             const rightTemple = lm[FaceLandmark.RIGHT_TEMPLE];
 
-            // Convert normalised coords → canvas pixels (mirrored X)
-            const lx = (1 - leftOuter.x) * canvasWidth;
-            const ly = leftOuter.y * canvasHeight;
-            const rx = (1 - rightOuter.x) * canvasWidth;
-            const ry = rightOuter.y * canvasHeight;
+            // Convert normalised coords → canvas pixels (mirrored X, cover-mapped)
+            const lx = (1 - leftOuter.x) * drawW + offsetX;
+            const ly = leftOuter.y * drawH + offsetY;
+            const rx = (1 - rightOuter.x) * drawW + offsetX;
+            const ry = rightOuter.y * drawH + offsetY;
 
             const dx = rx - lx;
             const dy = ry - ly;
             // 3D eye distance: z is in the same scale as x (normalised to image width),
-            // so depth difference in pixels = dz * canvasWidth.
-            // This stays constant regardless of head rotation (foreshortening in x
-            // is compensated by depth separation in z).
-            const dz = (leftOuter.z - rightOuter.z) * canvasWidth;
+            // so depth difference in pixels = dz * drawW.
+            const dz = (leftOuter.z - rightOuter.z) * drawW;
             const eyeDistance = Math.sqrt(dx * dx + dy * dy + dz * dz);
             const roll = Math.atan2(dy, dx);
 
             const center = {
-                x: (1 - noseBridge.x) * canvasWidth,
-                y: noseBridge.y * canvasHeight,
+                x: (1 - noseBridge.x) * drawW + offsetX,
+                y: noseBridge.y * drawH + offsetY,
             };
 
             // Forehead-to-chin for face height (3D)
-            const fhX = (1 - forehead.x) * canvasWidth;
-            const fhY = forehead.y * canvasHeight;
-            const chX = (1 - chin.x) * canvasWidth;
-            const chY = chin.y * canvasHeight;
-            const fdz = (forehead.z - chin.z) * canvasWidth;
+            const fhX = (1 - forehead.x) * drawW + offsetX;
+            const fhY = forehead.y * drawH + offsetY;
+            const chX = (1 - chin.x) * drawW + offsetX;
+            const chY = chin.y * drawH + offsetY;
+            const fdz = (forehead.z - chin.z) * drawW;
             const faceHeight = Math.sqrt(
                 (chX - fhX) ** 2 + (chY - fhY) ** 2 + fdz * fdz,
             );
@@ -95,13 +105,13 @@ export class FaceTracker {
             };
 
             // Temple-to-temple face width (3D)
-            const ltX = (1 - leftTemple.x) * canvasWidth;
-            const ltY = leftTemple.y * canvasHeight;
-            const rtX = (1 - rightTemple.x) * canvasWidth;
-            const rtY = rightTemple.y * canvasHeight;
+            const ltX = (1 - leftTemple.x) * drawW + offsetX;
+            const ltY = leftTemple.y * drawH + offsetY;
+            const rtX = (1 - rightTemple.x) * drawW + offsetX;
+            const rtY = rightTemple.y * drawH + offsetY;
             const twDx = rtX - ltX;
             const twDy = rtY - ltY;
-            const twDz = (leftTemple.z - rightTemple.z) * canvasWidth;
+            const twDz = (leftTemple.z - rightTemple.z) * drawW;
             const faceWidth = Math.sqrt(twDx * twDx + twDy * twDy + twDz * twDz);
 
             // Grab the 4x4 facial transformation matrix (column-major)

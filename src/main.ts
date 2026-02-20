@@ -28,29 +28,17 @@ let gestureReady = false;
 let showFaceDebug = false;
 
 // ---------------------------------------------------------------------------
-// Canvas sizing — fill the viewport with "cover" behaviour
+// Canvas sizing — full screen, video covers with aspect ratio preserved
 // ---------------------------------------------------------------------------
 
 function sizeCanvases(): void {
     if (!camera.isActive) return;
 
-    const viewW = window.innerWidth;
-    const viewH = window.innerHeight;
-    const videoAspect = camera.videoWidth / camera.videoHeight;
-    const viewAspect = viewW / viewH;
+    const viewW = document.documentElement.clientWidth;
+    const viewH = document.documentElement.clientHeight;
 
-    let drawW: number;
-    let drawH: number;
-    if (viewAspect > videoAspect) {
-        drawW = viewW;
-        drawH = viewW / videoAspect;
-    } else {
-        drawH = viewH;
-        drawW = viewH * videoAspect;
-    }
-
-    webcamRenderer.setSize(drawW, drawH);
-    glassesRenderer.setSize(drawW, drawH);
+    webcamRenderer.setSize(viewW, viewH);
+    glassesRenderer.setSize(viewW, viewH);
 }
 
 window.addEventListener('resize', sizeCanvases);
@@ -72,7 +60,13 @@ function renderLoop(): void {
     if (trackerReady) {
         faceTimestamp = Math.max(faceTimestamp + 1, Math.floor(now));
         const result = tracker.detect(video, faceTimestamp);
-        const poses = tracker.computePoses(result, webcamCanvas.width, webcamCanvas.height);
+        const poses = tracker.computePoses(
+            result,
+            webcamRenderer.coverDrawW,
+            webcamRenderer.coverDrawH,
+            webcamRenderer.coverOffsetX,
+            webcamRenderer.coverOffsetY,
+        );
         glassesRenderer.render(poses);
 
         if (showFaceDebug && poses.length > 0) {
