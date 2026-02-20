@@ -127,6 +127,7 @@ html, body {
     font-size: 0.8rem;
     color: #fff;
     margin-bottom: 8px;
+    cursor: pointer;
 }
 
 .gd-stats {
@@ -297,6 +298,7 @@ html, body {
     font-size: 0.9rem;
     margin-bottom: 10px;
     color: #fff;
+    cursor: pointer;
 }
 
 .tweak-section {

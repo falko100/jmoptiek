@@ -21,6 +21,7 @@ export function createGestureDebug(): {
     const title = document.createElement('div');
     title.className = 'gd-title';
     title.textContent = 'Gesture Debug';
+    title.addEventListener('click', () => panel.classList.add('hidden'));
     panel.appendChild(title);
 
     const stats = document.createElement('div');

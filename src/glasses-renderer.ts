@@ -26,20 +26,15 @@ export interface GlassesParams {
     baseRotX: number;
     baseRotY: number;
     baseRotZ: number;
-    occluderZ: number;
-    /** Clip the glasses at this depth behind the face (fraction of eye distance). 0 = no clipping. */
-    clipDepth: number;
 }
 
 export const DEFAULT_PARAMS: GlassesParams = {
-    scale: 1.80,
-    offsetY: 0.02,
-    depth: -0.45,
+    scale: 1.0,
+    offsetY: 0,
+    depth: 0,
     baseRotX: -4,
     baseRotY: -2,
     baseRotZ: 0,
-    occluderZ: 0,
-    clipDepth: 0.55,
 };
 
 // ---- Occluder material (invisible, depth-only) ----
@@ -109,12 +104,10 @@ export class GlassesRenderer {
     // ---- Occluder ----
     private occluderTemplate: THREE.Object3D | null = null;
     private occluderBaseHeight = 1;
+    private occluderBaseWidth = 1;
     private occluderOriginalMaterials = new Map<string, THREE.Material | THREE.Material[]>();
     private activeOccluders: THREE.Object3D[] = [];
     private _showOccluder = false;
-
-    /** Clipping plane used to cut off the back of the glasses */
-    private clipPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
 
     params: GlassesParams = { ...DEFAULT_PARAMS };
 
@@ -132,7 +125,6 @@ export class GlassesRenderer {
         this.renderer.setPixelRatio(1);
         this.renderer.setClearColor(0x000000, 0);
         this.renderer.sortObjects = true;
-        this.renderer.localClippingEnabled = true;
 
         // ---- model-viewer style rendering ----
         this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -279,9 +271,14 @@ export class GlassesRenderer {
         box.getCenter(center);
         model.position.sub(center);
 
+        // Offset backward so the front face (nose) is at Z=0
+        const frontZ = new THREE.Box3().setFromObject(model).max.z;
+        model.position.z -= frontZ;
+
         const size = new THREE.Vector3();
         box.getSize(size);
         this.occluderBaseHeight = size.y;
+        this.occluderBaseWidth = size.x;
 
         model.traverse((child) => {
             if (child instanceof THREE.Mesh) {
@@ -338,11 +335,13 @@ export class GlassesRenderer {
             });
             for (const obj of toRemove) obj.removeFromParent();
 
-            // Centre
+            // Centre at bounding box center, then offset so front face (nose pads) is at Z=0
             const box = new THREE.Box3().setFromObject(model);
             const ctr = new THREE.Vector3();
             box.getCenter(ctr);
             model.position.sub(ctr);
+            const frontZ = new THREE.Box3().setFromObject(model).max.z;
+            model.position.z -= frontZ;
 
             // Pivot for base rotation
             const pivot = new THREE.Group();
@@ -365,16 +364,9 @@ export class GlassesRenderer {
             wrapper.add(pivot);
             wrapper.visible = false;
             wrapper.renderOrder = 1;
-            const clipPlaneRef = this.clipPlane;
             wrapper.traverse((child) => {
                 if (child instanceof THREE.Mesh) {
                     child.renderOrder = 1;
-                    // Apply clipping plane to every material
-                    const mats = Array.isArray(child.material) ? child.material : [child.material];
-                    for (const mat of mats) {
-                        mat.clippingPlanes = [clipPlaneRef];
-                        mat.clipShadows = true;
-                    }
                 }
             });
             this.scene.add(wrapper);
@@ -504,38 +496,6 @@ export class GlassesRenderer {
     render(poses: FacePose[]): void {
         const now = performance.now();
 
-        // ---- Update clipping plane ----
-        if (this.params.clipDepth > 0 && poses.length > 0) {
-            const pose = poses[0];
-            const faceRotation = this.getFaceRotation(pose);
-
-            // Plane normal = face forward direction (toward camera)
-            const normal = new THREE.Vector3(0, 0, 1).applyEuler(faceRotation);
-
-            // Glasses position in ortho space
-            const yOff = pose.eyeDistance * this.params.offsetY;
-            const gx = pose.center.x - this.canvasW / 2;
-            const gy = -(pose.center.y + yOff - this.canvasH / 2);
-            const forward = normal.clone();
-            const depthOff = pose.eyeDistance * this.params.depth;
-            const glassesPos = new THREE.Vector3(
-                gx + forward.x * depthOff,
-                gy + forward.y * depthOff,
-                forward.z * depthOff,
-            );
-
-            // Position the plane behind the glasses center by clipDepth
-            const clipOffset = pose.eyeDistance * this.params.clipDepth;
-            const planePoint = glassesPos.clone().add(normal.clone().multiplyScalar(-clipOffset));
-
-            this.clipPlane.normal.copy(normal);
-            this.clipPlane.constant = -planePoint.dot(normal);
-        } else {
-            // No clipping — push the plane far away so it clips nothing
-            this.clipPlane.normal.set(0, 0, 1);
-            this.clipPlane.constant = 99999;
-        }
-
         // ---- Occluders ----
         this.renderOccluders(poses);
 
@@ -607,21 +567,14 @@ export class GlassesRenderer {
             const pose = poses[i];
             occ.visible = true;
 
-            const faceRotation = this.getFaceRotation(pose);
-            const s = (pose.faceHeight / this.occluderBaseHeight) * 0.9;
-            occ.scale.set(s * 0.8, s, s);
-            occ.rotation.copy(faceRotation);
+            const sy = (pose.faceHeight / this.occluderBaseHeight) * 0.9;
+            const sx = (pose.faceWidth / this.occluderBaseWidth) * 0.9;
+            occ.scale.set(sx, sy, sy);
+            occ.quaternion.copy(pose.quaternion);
 
-            const ox = pose.faceCenter.x - this.canvasW / 2;
-            const oy = -(pose.faceCenter.y - this.canvasH / 2);
-
-            const forward = new THREE.Vector3(0, 0, 1).applyEuler(faceRotation);
-            const zOff = pose.faceHeight * this.params.occluderZ;
-            occ.position.set(
-                ox + forward.x * zOff,
-                oy + forward.y * zOff,
-                forward.z * zOff,
-            );
+            const ox = pose.center.x - this.canvasW / 2;
+            const oy = -(pose.center.y - this.canvasH / 2);
+            occ.position.set(ox, oy, 0);
         }
     }
 
@@ -661,14 +614,13 @@ export class GlassesRenderer {
             const baseX = pose.center.x - this.canvasW / 2;
             const baseY = -(pose.center.y + paramYOff - this.canvasH / 2);
 
-            const targetWidth = pose.eyeDistance * this.params.scale;
+            const targetWidth = pose.faceWidth * this.params.scale;
             const s = targetWidth / model.width;
             clone.scale.set(s, s, s);
 
-            const faceRotation = this.getFaceRotation(pose);
-            clone.rotation.copy(faceRotation);
+            clone.quaternion.copy(pose.quaternion);
 
-            const forward = new THREE.Vector3(0, 0, 1).applyEuler(faceRotation);
+            const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(pose.quaternion);
             const depthOff = pose.eyeDistance * this.params.depth;
 
             clone.position.set(
@@ -677,23 +629,6 @@ export class GlassesRenderer {
                 forward.z * depthOff,
             );
         }
-    }
-
-    private getFaceRotation(pose: FacePose): THREE.Euler {
-        const m = pose.matrix;
-
-        const rot = new THREE.Matrix4();
-        rot.set(
-            m[0], m[4], m[8],  0,
-            m[1], m[5], m[9],  0,
-            m[2], m[6], m[10], 0,
-            0,    0,    0,     1,
-        );
-
-        const S = new THREE.Matrix4().makeScale(-1, 1, 1);
-        rot.premultiply(S).multiply(S);
-
-        return new THREE.Euler().setFromRotationMatrix(rot, 'XYZ');
     }
 
     dispose(): void {

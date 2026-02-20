@@ -1,6 +1,16 @@
 import { GlassesRenderer, DEFAULT_PARAMS, type GlassesParams } from './glasses-renderer.ts';
 
 const STORAGE_KEY = 'glasses-preview-params';
+const MIGRATION_KEY = 'glasses-preview-v3-migrated';
+
+// One-time migration: clear stale params from v1 (eyeDistance-based scaling)
+try {
+    if (!localStorage.getItem(MIGRATION_KEY)) {
+        localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem('glasses-preview-model-overrides');
+        localStorage.setItem(MIGRATION_KEY, '1');
+    }
+} catch { /* ignore */ }
 
 interface SliderDef {
     key: keyof GlassesParams;
@@ -11,10 +21,9 @@ interface SliderDef {
 }
 
 const SLIDERS: SliderDef[] = [
-    { key: 'scale',    label: 'Scale',       min: 0.5, max: 8,    step: 0.05 },
+    { key: 'scale',    label: 'Scale',       min: 0.5, max: 2.0,  step: 0.05 },
     { key: 'offsetY',  label: 'Offset Y',    min: -2,  max: 2,    step: 0.01 },
     { key: 'depth',    label: 'Depth',       min: -3,  max: 3,    step: 0.01 },
-    { key: 'clipDepth', label: 'Clip',        min: 0,   max: 3,    step: 0.01 },
     { key: 'baseRotX', label: 'Rot X°',      min: -180, max: 180, step: 1 },
     { key: 'baseRotY', label: 'Rot Y°',      min: -180, max: 180, step: 1 },
     { key: 'baseRotZ', label: 'Rot Z°',      min: -180, max: 180, step: 1 },
@@ -59,6 +68,7 @@ export function createTweakPanel(renderer: GlassesRenderer): TweakPanel {
     const heading = document.createElement('div');
     heading.className = 'tweak-title';
     heading.textContent = 'Glasses Tweaks';
+    heading.addEventListener('click', () => panel.classList.add('hidden'));
     panel.appendChild(heading);
 
     // Track slider elements for syncing
@@ -102,18 +112,6 @@ export function createTweakPanel(renderer: GlassesRenderer): TweakPanel {
     toggleRow.appendChild(checkbox);
     toggleRow.appendChild(toggleLabel);
     panel.appendChild(toggleRow);
-
-    // Occluder Z slider
-    {
-        const def: SliderDef = { key: 'occluderZ', label: 'Offset Z', min: -3, max: 3, step: 0.01 };
-        const { input, valueDisplay } = createSliderRow(panel, def, saved[def.key], (val) => {
-            renderer.updateParams({ [def.key]: val });
-            saveParams(renderer.params);
-        });
-        sliderInputs.push(input);
-        sliderDisplays.push(valueDisplay);
-        allSliderDefs.push(def);
-    }
 
     // ---- Post-processing toggles ----
     const fxSection = document.createElement('div');

@@ -18,12 +18,10 @@ const MODELS: GlassesModel[] = [
     {
         name: 'Tommy Hilfiger 2338 Gold',
         url: '/glasses/TH_2338.glb',
-        defaults: { depth: -0.86 },
     },
     {
         name: 'David Beckham 1217 Silver',
         url: '/glasses/DB1217S.glb',
-        defaults: { depth: -0.45 },
     },
 ];
 
@@ -64,7 +62,7 @@ function saveModelOverrides(overrides: Record<number, Partial<GlassesParams>>): 
 
 /** Keys that are saved/restored per model */
 const PER_MODEL_KEYS: (keyof GlassesParams)[] = [
-    'scale', 'offsetY', 'depth', 'clipDepth',
+    'scale', 'offsetY', 'depth',
 ];
 
 export interface ModelSelector {

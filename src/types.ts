@@ -14,10 +14,23 @@ export interface FacePose {
     eyeDistance: number;
     /** Forehead-to-chin distance in canvas pixels */
     faceHeight: number;
+    /** Temple-to-temple distance in canvas pixels (3D) — face width at ear level */
+    faceWidth: number;
     /** 4x4 column-major facial transformation matrix from MediaPipe */
     matrix: Float32Array;
     /** In-plane rotation angle in radians (tilt between eyes) */
     roll: number;
+    /** Rotation quaternion (computed from matrix with mirroring) */
+    quaternion: import('three').Quaternion;
+    /** Raw 2D landmark positions for debug visualisation */
+    landmarks: {
+        leftEye: Point;
+        rightEye: Point;
+        forehead: Point;
+        chin: Point;
+        leftTemple: Point;
+        rightTemple: Point;
+    };
 }
 
 /**
@@ -39,4 +52,8 @@ export const FaceLandmark = {
     FOREHEAD: 10,
     /** Chin bottom */
     CHIN: 152,
+    /** Left temple (ear-level, left side of face) */
+    LEFT_TEMPLE: 454,
+    /** Right temple (ear-level, right side of face) */
+    RIGHT_TEMPLE: 234,
 } as const;

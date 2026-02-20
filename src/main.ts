@@ -8,6 +8,7 @@ import { createTweakPanel } from './tweak-panel.ts';
 import { createModelSelector, type ModelSelector } from './model-selector.ts';
 import { createGestureDebug } from './gesture-debug.ts';
 import { createCornerButtons } from './corner-buttons.ts';
+import { drawFaceDebug } from './face-debug.ts';
 
 // DOM elements
 const webcamCanvas = document.getElementById('webcam-canvas') as HTMLCanvasElement;
@@ -24,6 +25,7 @@ const glassesRenderer = new GlassesRenderer(glassesCanvas);
 
 let trackerReady = false;
 let gestureReady = false;
+let showFaceDebug = false;
 
 // ---------------------------------------------------------------------------
 // Canvas sizing — fill the viewport with "cover" behaviour
@@ -72,6 +74,11 @@ function renderLoop(): void {
         const result = tracker.detect(video, faceTimestamp);
         const poses = tracker.computePoses(result, webcamCanvas.width, webcamCanvas.height);
         glassesRenderer.render(poses);
+
+        if (showFaceDebug && poses.length > 0) {
+            const ctx = webcamCanvas.getContext('2d');
+            if (ctx) drawFaceDebug(ctx, poses);
+        }
     }
 
     if (gestureReady) {
@@ -108,17 +115,51 @@ async function start(): Promise<void> {
         const cornerButtons = createCornerButtons();
         const gestureDebug = createGestureDebug();
 
+        // Start hidden
+        tweakPanel.element.classList.add('hidden');
+        gestureDebug.element.classList.add('hidden');
+
         // Toggle debug UIs with keyboard shortcuts
         window.addEventListener('keydown', (e) => {
             if (e.key === 'd' || e.key === 'D') {
-                // Toggle gesture debug panel
                 gestureDebug.element.classList.toggle('hidden');
             }
             if (e.key === 't' || e.key === 'T') {
-                // Toggle tweak panel
                 tweakPanel.element.classList.toggle('hidden');
             }
+            if (e.key === 'f' || e.key === 'F') {
+                showFaceDebug = !showFaceDebug;
+            }
         });
+
+        // Long-press on webcam canvas toggles both debug panels
+        let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+        const LONG_PRESS_MS = 500;
+
+        webcamCanvas.addEventListener('pointerdown', () => {
+            longPressTimer = setTimeout(() => {
+                longPressTimer = null;
+                const bothHidden =
+                    tweakPanel.element.classList.contains('hidden') &&
+                    gestureDebug.element.classList.contains('hidden');
+                if (bothHidden) {
+                    tweakPanel.element.classList.remove('hidden');
+                    gestureDebug.element.classList.remove('hidden');
+                } else {
+                    tweakPanel.element.classList.add('hidden');
+                    gestureDebug.element.classList.add('hidden');
+                }
+            }, LONG_PRESS_MS);
+        });
+        const cancelLongPress = () => {
+            if (longPressTimer !== null) {
+                clearTimeout(longPressTimer);
+                longPressTimer = null;
+            }
+        };
+        webcamCanvas.addEventListener('pointerup', cancelLongPress);
+        webcamCanvas.addEventListener('pointercancel', cancelLongPress);
+        webcamCanvas.addEventListener('pointermove', cancelLongPress);
 
         statusEl.textContent = 'Loading gesture detection...';
         gesture.init().then(() => {
