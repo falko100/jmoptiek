@@ -1,0 +1,347 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #000;
+}
+
+#webcam-canvas,
+#glasses-canvas {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+}
+
+#webcam-canvas {
+    z-index: 0;
+}
+
+#glasses-canvas {
+    z-index: 1;
+    pointer-events: none;
+}
+
+#status {
+    position: fixed;
+    z-index: 2;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 1.2rem;
+    color: #888;
+    pointer-events: none;
+    transition: opacity 0.3s;
+}
+
+#status.hidden {
+    opacity: 0;
+}
+
+#webcam {
+    display: none;
+}
+
+/* ---- Corner buttons ---- */
+
+.corner-btn {
+    position: fixed;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 5;
+    width: 80px;
+    height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.5;
+    transition: opacity 0.2s;
+    pointer-events: none;
+}
+
+.corner-btn.active {
+    opacity: 1;
+}
+
+.corner-btn-left {
+    left: 24px;
+}
+
+.corner-btn-right {
+    right: 24px;
+}
+
+.corner-btn svg {
+    position: absolute;
+    top: 0;
+    left: 0;
+}
+
+.corner-btn-label {
+    position: relative;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 2rem;
+    font-weight: 300;
+    color: #fff;
+    line-height: 1;
+    user-select: none;
+}
+
+/* ---- Debug visibility toggle ---- */
+
+#gesture-debug.hidden,
+#tweak-panel.hidden {
+    display: none;
+}
+
+/* ---- Gesture debug panel ---- */
+
+#gesture-debug {
+    position: fixed;
+    top: 16px;
+    left: 16px;
+    z-index: 10;
+    background: rgba(0, 0, 0, 0.8);
+    backdrop-filter: blur(8px);
+    border-radius: 10px;
+    padding: 12px 16px;
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 0.72rem;
+    color: #aaa;
+    min-width: 220px;
+    max-width: 260px;
+    user-select: none;
+    line-height: 1.5;
+}
+
+.gd-title {
+    font-weight: 700;
+    font-size: 0.8rem;
+    color: #fff;
+    margin-bottom: 8px;
+}
+
+.gd-stats {
+    margin-bottom: 8px;
+}
+
+.gd-label {
+    color: #666;
+    display: inline-block;
+    width: 65px;
+}
+
+.gd-val {
+    color: #ccc;
+}
+
+.gd-val.gd-hot {
+    color: #4ecca3;
+    font-weight: 700;
+}
+
+.gd-bar {
+    letter-spacing: 1px;
+    color: #4ecca3;
+}
+
+.gd-hand-label {
+    color: #8e8e8e;
+    font-weight: 600;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    display: inline-block;
+    margin-top: 4px;
+}
+
+.gd-log-title {
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #666;
+    margin-bottom: 4px;
+    padding-top: 6px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.gd-log {
+    max-height: 120px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #333 transparent;
+}
+
+.gd-event {
+    padding: 2px 0;
+    font-size: 0.7rem;
+}
+
+.gd-evt-enter {
+    color: #2ecc71;
+}
+
+.gd-evt-leave {
+    color: #e74c3c;
+}
+
+.gd-evt-threshold {
+    color: #4ecca3;
+}
+
+.gd-evt-threshold-lost {
+    color: #7f8c8d;
+}
+
+.gd-evt-swipe {
+    color: #f1c40f;
+    font-weight: 700;
+}
+
+.gd-evt-blocked {
+    color: #e67e22;
+    font-style: italic;
+}
+
+/* ---- Model selector ---- */
+
+#model-selector {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    display: flex;
+    gap: 8px;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(8px);
+    border-radius: 10px;
+    padding: 8px 12px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+.model-btn {
+    padding: 8px 18px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    background: transparent;
+    color: #ccc;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s, border-color 0.2s;
+    white-space: nowrap;
+}
+
+.model-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+}
+
+.model-btn.active {
+    background: #4ecca3;
+    color: #1a1a2e;
+    border-color: #4ecca3;
+    font-weight: 600;
+}
+
+/* ---- Tweak panel ---- */
+
+#tweak-panel {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 10;
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(8px);
+    border-radius: 10px;
+    padding: 14px 18px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 0.82rem;
+    color: #ddd;
+    min-width: 240px;
+    user-select: none;
+}
+
+.tweak-title {
+    font-weight: 600;
+    font-size: 0.9rem;
+    margin-bottom: 10px;
+    color: #fff;
+}
+
+.tweak-section {
+    font-weight: 600;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #999;
+    margin-top: 10px;
+    margin-bottom: 6px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.tweak-row {
+    display: grid;
+    grid-template-columns: 90px 1fr 44px;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.tweak-row label {
+    white-space: nowrap;
+}
+
+.tweak-row input[type="range"] {
+    width: 100%;
+    accent-color: #4ecca3;
+}
+
+.tweak-value {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: #4ecca3;
+}
+
+.tweak-toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.tweak-toggle-row input[type="checkbox"] {
+    accent-color: #4ecca3;
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+}
+
+.tweak-toggle-row label {
+    cursor: pointer;
+}
+
+.tweak-reset {
+    margin-top: 10px;
+    width: 100%;
+    padding: 6px;
+    border: none;
+    border-radius: 6px;
+    background: #333;
+    color: #ddd;
+    cursor: pointer;
+    font-size: 0.82rem;
+}
+
+.tweak-reset:hover {
+    background: #444;
+}
