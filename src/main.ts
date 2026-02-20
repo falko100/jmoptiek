@@ -76,6 +76,14 @@ function renderLoop(): void {
     }
 
     if (gestureReady) {
+        gesture.setVisibleBounds(
+            webcamRenderer.coverDrawW,
+            webcamRenderer.coverDrawH,
+            webcamRenderer.coverOffsetX,
+            webcamRenderer.coverOffsetY,
+            webcamCanvas.width,
+            webcamCanvas.height,
+        );
         gestureTimestamp = Math.max(gestureTimestamp + 1, Math.floor(now) + 1);
         gesture.detect(video, gestureTimestamp);
     }

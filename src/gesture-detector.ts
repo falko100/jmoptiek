@@ -53,6 +53,12 @@ export class GestureDetector {
     /** Cooldown after a button press before another can fire */
     private static readonly COOLDOWN = 1200;
 
+    /** Visible bounds in normalised video coords (set from cover transform) */
+    private visLeft = 0;
+    private visRight = 1;
+    private visTop = 0;
+    private visBottom = 1;
+
     /** Accumulated dwell time per zone */
     private dwellAccum: Record<ButtonSide, number> = { left: 0, right: 0 };
 
@@ -87,14 +93,28 @@ export class GestureDetector {
         this.debugCallback = cb;
     }
 
+    /** Update the visible region from the cover transform. */
+    setVisibleBounds(drawW: number, drawH: number, offsetX: number, offsetY: number, canvasW: number, canvasH: number): void {
+        this.visLeft = -offsetX / drawW;
+        this.visRight = (canvasW - offsetX) / drawW;
+        this.visTop = -offsetY / drawH;
+        this.visBottom = (canvasH - offsetY) / drawH;
+    }
+
     /**
      * Determine which zone a normalised coordinate falls in.
+     * Only triggers within the visible (non-cropped) region of the video.
      * MediaPipe coords are NOT mirrored: x=0 is left-of-camera (right on screen).
-     * Since webcam is mirrored: low x = right on screen, high x = left on screen.
      */
-    private getZone(x: number): ButtonSide | null {
-        if (x <= GestureDetector.ZONE_WIDTH) return 'right';
-        if (x >= 1 - GestureDetector.ZONE_WIDTH) return 'left';
+    private getZone(x: number, y: number): ButtonSide | null {
+        // Ignore hands outside the visible canvas area
+        if (x < this.visLeft || x > this.visRight || y < this.visTop || y > this.visBottom) {
+            return null;
+        }
+        const visW = this.visRight - this.visLeft;
+        const zoneW = GestureDetector.ZONE_WIDTH * visW;
+        if (x <= this.visLeft + zoneW) return 'right';
+        if (x >= this.visRight - zoneW) return 'left';
         return null;
     }
 
@@ -124,7 +144,7 @@ export class GestureDetector {
         for (let h = 0; h < handCount; h++) {
             // Use index finger tip (landmark 8) — more precise than wrist for targeting
             const tip = result.landmarks![h][8];
-            const zone = this.getZone(tip.x);
+            const zone = this.getZone(tip.x, tip.y);
 
             if (zone) {
                 zonesOccupied[zone] = true;
