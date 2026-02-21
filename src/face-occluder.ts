@@ -25,36 +25,35 @@ function buildTriangles(): Uint16Array {
     };
     for (const e of edges) addEdge(e.start, e.end);
 
-    // Collect face oval vertices, then selectively expand exclusion:
-    // - Left/right sides get 2-ring exclusion (prevents glasses arm clipping)
-    // - Forehead & chin get 1-ring only (keeps occluder tall enough)
+    // Selective exclusion: only the left/right sides get 2-ring exclusion
+    // (prevents glasses arm clipping). Top/bottom keep ALL vertices (full oval).
     const ovalLoop = orderedLoop(FaceLandmarker.FACE_LANDMARKS_FACE_OVAL);
-    const ovalVerts = new Set(ovalLoop);
     const ovalLen = ovalLoop.length;
 
     // Find forehead (top) and chin (bottom) positions in the oval loop
     const foreheadIdx = ovalLoop.indexOf(FaceLandmark.FOREHEAD);
     const chinIdx = ovalLoop.indexOf(FaceLandmark.CHIN);
 
-    // Mark top ~40% around forehead and bottom ~30% around chin as non-expandable
-    const noExpandVerts = new Set<number>();
+    // Mark top ~40% and bottom ~30% as "keep" — no exclusion at all
+    const keepVerts = new Set<number>();
     if (foreheadIdx >= 0) {
         const topCount = Math.round(ovalLen * 0.4);
         for (let k = -Math.floor(topCount / 2); k <= Math.floor(topCount / 2); k++) {
-            noExpandVerts.add(ovalLoop[((foreheadIdx + k) % ovalLen + ovalLen) % ovalLen]);
+            keepVerts.add(ovalLoop[((foreheadIdx + k) % ovalLen + ovalLen) % ovalLen]);
         }
     }
     if (chinIdx >= 0) {
         const bottomCount = Math.round(ovalLen * 0.3);
         for (let k = -Math.floor(bottomCount / 2); k <= Math.floor(bottomCount / 2); k++) {
-            noExpandVerts.add(ovalLoop[((chinIdx + k) % ovalLen + ovalLen) % ovalLen]);
+            keepVerts.add(ovalLoop[((chinIdx + k) % ovalLen + ovalLen) % ovalLen]);
         }
     }
 
-    // Expand by one ring only for side oval vertices (not forehead/chin)
-    const excludedVerts = new Set(ovalVerts);
-    for (const v of ovalVerts) {
-        if (noExpandVerts.has(v)) continue;
+    // Side oval vertices: exclude them + their neighbors (2-ring)
+    const excludedVerts = new Set<number>();
+    for (const v of ovalLoop) {
+        if (keepVerts.has(v)) continue; // top/bottom: no exclusion
+        excludedVerts.add(v);
         const neighbors = adj.get(v);
         if (neighbors) {
             for (const n of neighbors) excludedVerts.add(n);
