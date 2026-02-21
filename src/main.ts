@@ -106,7 +106,6 @@ async function start(): Promise<void> {
         trackerReady = true;
 
         statusEl.textContent = 'Loading 3D models...';
-        await glassesRenderer.loadOccluder('/canonical.glb');
         const selector: ModelSelector = createModelSelector(glassesRenderer);
         await selector.init();
 

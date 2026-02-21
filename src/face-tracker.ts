@@ -133,7 +133,14 @@ export class FaceTracker {
                 rightTemple: { x: rtX, y: rtY },
             };
 
-            return { center, faceCenter, eyeDistance, faceHeight, faceWidth, matrix, roll, quaternion, landmarks };
+            // Convert all 468 face landmarks to canvas pixel space
+            const allLandmarks = lm.map((pt) => ({
+                x: (1 - pt.x) * drawW + offsetX,
+                y: pt.y * drawH + offsetY,
+                z: pt.z * drawW,
+            }));
+
+            return { center, faceCenter, eyeDistance, faceHeight, faceWidth, matrix, roll, quaternion, landmarks, allLandmarks };
         });
     }
 

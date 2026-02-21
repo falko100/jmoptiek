@@ -31,6 +31,8 @@ export interface FacePose {
         leftTemple: Point;
         rightTemple: Point;
     };
+    /** All 468 face landmarks in canvas pixel space (mirrored X) */
+    allLandmarks: { x: number; y: number; z: number }[];
 }
 
 /**

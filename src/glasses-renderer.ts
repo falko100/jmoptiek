@@ -12,6 +12,7 @@ import {
     ToneMappingMode,
 } from 'postprocessing';
 import type { FacePose } from './types.ts';
+import { FaceOccluder } from './face-occluder.ts';
 
 /**
  * Internal render resolution multiplier.
@@ -29,20 +30,13 @@ export interface GlassesParams {
 }
 
 export const DEFAULT_PARAMS: GlassesParams = {
-    scale: 1.0,
+    scale: 1.15,
     offsetY: 0,
     depth: 0,
     baseRotX: -4,
     baseRotY: -2,
     baseRotZ: 0,
 };
-
-// ---- Occluder material (invisible, depth-only) ----
-
-const occluderMaterial = new THREE.MeshBasicMaterial({
-    colorWrite: false,
-    depthWrite: true,
-});
 
 // ---- Transition config ----
 
@@ -102,11 +96,7 @@ export class GlassesRenderer {
     private transition: Transition | null = null;
 
     // ---- Occluder ----
-    private occluderTemplate: THREE.Object3D | null = null;
-    private occluderBaseHeight = 1;
-    private occluderBaseWidth = 1;
-    private occluderOriginalMaterials = new Map<string, THREE.Material | THREE.Material[]>();
-    private activeOccluders: THREE.Object3D[] = [];
+    private faceOccluder = new FaceOccluder();
     private _showOccluder = false;
 
     params: GlassesParams = { ...DEFAULT_PARAMS };
@@ -245,55 +235,7 @@ export class GlassesRenderer {
 
     setShowOccluder(visible: boolean): void {
         this._showOccluder = visible;
-        const apply = (obj: THREE.Object3D) => {
-            obj.traverse((child) => {
-                if (child instanceof THREE.Mesh) {
-                    if (visible) {
-                        const orig = this.occluderOriginalMaterials.get(child.name);
-                        if (orig) child.material = orig;
-                    } else {
-                        child.material = occluderMaterial;
-                    }
-                }
-            });
-        };
-        for (const occ of this.activeOccluders) apply(occ);
-        if (this.occluderTemplate) apply(this.occluderTemplate);
-    }
-
-    async loadOccluder(url: string): Promise<void> {
-        const loader = new GLTFLoader();
-        const gltf = await loader.loadAsync(url);
-        const model = gltf.scene;
-
-        const box = new THREE.Box3().setFromObject(model);
-        const center = new THREE.Vector3();
-        box.getCenter(center);
-        model.position.sub(center);
-
-        // Offset backward so the front face (nose) is at Z=0
-        const frontZ = new THREE.Box3().setFromObject(model).max.z;
-        model.position.z -= frontZ;
-
-        const size = new THREE.Vector3();
-        box.getSize(size);
-        this.occluderBaseHeight = size.y;
-        this.occluderBaseWidth = size.x;
-
-        model.traverse((child) => {
-            if (child instanceof THREE.Mesh) {
-                this.occluderOriginalMaterials.set(child.name, child.material);
-                child.material = occluderMaterial;
-                child.renderOrder = 0;
-            }
-        });
-
-        const wrapper = new THREE.Group();
-        wrapper.add(model);
-        wrapper.visible = false;
-        wrapper.renderOrder = 0;
-        this.scene.add(wrapper);
-        this.occluderTemplate = wrapper;
+        this.faceOccluder.setShowDebug(visible);
     }
 
     // ==== Model preloading ====
@@ -497,7 +439,7 @@ export class GlassesRenderer {
         const now = performance.now();
 
         // ---- Occluders ----
-        this.renderOccluders(poses);
+        this.faceOccluder.update(poses, this.canvasW, this.canvasH, this.scene);
 
         // ---- Transition ----
         let outgoingYOffset = 0;
@@ -545,37 +487,6 @@ export class GlassesRenderer {
         }
 
         this.composer.render();
-    }
-
-    private renderOccluders(poses: FacePose[]): void {
-        if (!this.occluderTemplate) return;
-
-        while (this.activeOccluders.length < poses.length) {
-            const occ = this.occluderTemplate.clone();
-            occ.renderOrder = 0;
-            this.scene.add(occ);
-            this.activeOccluders.push(occ);
-        }
-
-        for (let i = 0; i < this.activeOccluders.length; i++) {
-            const occ = this.activeOccluders[i];
-            if (i >= poses.length) {
-                occ.visible = false;
-                continue;
-            }
-
-            const pose = poses[i];
-            occ.visible = true;
-
-            const sy = (pose.faceHeight / this.occluderBaseHeight) * 0.9;
-            const sx = (pose.faceWidth / this.occluderBaseWidth) * 0.9;
-            occ.scale.set(sx, sy, sy);
-            occ.quaternion.copy(pose.quaternion);
-
-            const ox = pose.center.x - this.canvasW / 2;
-            const oy = -(pose.center.y - this.canvasH / 2);
-            occ.position.set(ox, oy, 0);
-        }
     }
 
     private ensureClones(
