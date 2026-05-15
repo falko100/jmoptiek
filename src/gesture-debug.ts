@@ -3,11 +3,11 @@ import type { GestureDebugInfo, GestureEvent } from './gesture-detector.ts';
 const MAX_LOG_LINES = 50;
 
 const EVENT_STYLES: Record<GestureEvent['type'], { label: string; cls: string }> = {
-    hand_enter:       { label: 'HAND ENTER',        cls: 'gd-evt-enter' },
-    hand_leave:       { label: 'HAND LEAVE',        cls: 'gd-evt-leave' },
-    zone_enter:       { label: 'ZONE ENTER',        cls: 'gd-evt-threshold' },
-    zone_leave:       { label: 'ZONE LEAVE',        cls: 'gd-evt-threshold-lost' },
-    button_press:     { label: 'BUTTON PRESS',      cls: 'gd-evt-swipe' },
+    hand_enter:       { label: 'HAND ENTER',       cls: 'gd-evt-enter' },
+    hand_leave:       { label: 'HAND LEAVE',       cls: 'gd-evt-leave' },
+    button_enter:     { label: 'BTN ENTER',        cls: 'gd-evt-threshold' },
+    button_leave:     { label: 'BTN LEAVE',        cls: 'gd-evt-threshold-lost' },
+    button_trigger:   { label: 'BTN TRIGGER',      cls: 'gd-evt-swipe' },
     cooldown_blocked: { label: 'BLOCKED (cooldown)', cls: 'gd-evt-blocked' },
 };
 
@@ -37,7 +37,7 @@ export function createGestureDebug(): {
     log.className = 'gd-log';
     panel.appendChild(log);
 
-    document.body.appendChild(panel);
+    document.getElementById('camera-area')!.appendChild(panel);
 
     function addLogEntry(evt: GestureEvent): void {
         const style = EVENT_STYLES[evt.type];
@@ -65,16 +65,12 @@ export function createGestureDebug(): {
             const lines: string[] = [
                 `<span class="gd-label">Hands</span> <span class="gd-val">${info.handsDetected}</span>`,
                 `<span class="gd-label">Cooldown</span> <span class="gd-val">${info.cooldownRemaining > 0 ? info.cooldownRemaining.toFixed(0) + 'ms' : 'ready'}</span>`,
-                `<span class="gd-label">Left</span> <span class="gd-val gd-bar">${progressBar(info.leftProgress)}</span> <span class="gd-val">${(info.leftProgress * 100).toFixed(0)}%</span>`,
-                `<span class="gd-label">Right</span> <span class="gd-val gd-bar">${progressBar(info.rightProgress)}</span> <span class="gd-val">${(info.rightProgress * 100).toFixed(0)}%</span>`,
             ];
 
-            for (let h = 0; h < info.hands.length; h++) {
-                const hand = info.hands[h];
+            for (const btn of info.buttons) {
+                const cls = btn.occupied ? 'gd-hot' : '';
                 lines.push(
-                    `<span class="gd-hand-label">Hand ${h}</span>`,
-                    `<span class="gd-label">  Pos</span> <span class="gd-val">${hand.wristX.toFixed(3)}, ${hand.wristY.toFixed(3)}</span>`,
-                    `<span class="gd-label">  Zone</span> <span class="gd-val ${hand.zone ? 'gd-hot' : ''}">${hand.zone ?? 'none'}</span>`,
+                    `<span class="gd-label">${btn.id}</span> <span class="gd-val gd-bar ${cls}">${progressBar(btn.progress)}</span> <span class="gd-val">${(btn.progress * 100).toFixed(0)}%</span>`,
                 );
             }
 

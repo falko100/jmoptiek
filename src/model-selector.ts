@@ -5,6 +5,8 @@ import type { TweakPanel } from './tweak-panel.ts';
 export interface GlassesModel {
     name: string;
     url: string;
+    /** Short, URL-safe identifier used in the booking QR link */
+    shortName: string;
     /** Per-model param overrides (merged on top of DEFAULT_PARAMS) */
     defaults?: Partial<GlassesParams>;
 }
@@ -13,15 +15,33 @@ const MODELS: GlassesModel[] = [
     // { name: 'Brille', url: '/glasses/brille.glb' },
     {
         name: 'S Black White Blue',
+        shortName: 'sbwb',
         url: '/glasses/S_BLACK WHITE_BLUE_complete.glb',
     },
     {
         name: 'Tommy Hilfiger 2338 Gold',
+        shortName: 'th2338',
         url: '/glasses/TH_2338.glb',
     },
     {
         name: 'David Beckham 1217 Silver',
+        shortName: 'db1217s',
         url: '/glasses/DB1217S.glb',
+    },
+    {
+        name: 'David Beckham 1237 Gold',
+        shortName: 'db1237-gold',
+        url: '/glasses/ARS_Library_Product_Data_2F1107912W85320_2F3dModels_2FurlGlobal_2FDB1237_1107912W85320_CUT_051225_1.glb',
+    },
+    {
+        name: 'David Beckham 1237 Black',
+        shortName: 'db1237-black',
+        url: '/glasses/ARS_Library_Product_Data_2F110791KB75320_2F3dModels_2FurlGlobalComplete_2FDB1237_110791KB75320_FULL_051225_3.glb',
+    },
+    {
+        name: 'Smith Lowdown XL2',
+        shortName: 'lowdownxl2',
+        url: '/glasses/LOWDOWNXL2_201514003601H_CUT.glb',
     },
 ];
 
@@ -71,16 +91,21 @@ export interface ModelSelector {
     next: () => void;
     prev: () => void;
     setTweakPanel: (panel: TweakPanel) => void;
+    /** Short name of the currently selected model */
+    currentShortName: () => string;
+    /** Fired whenever the selected model changes (incl. initial selection) */
+    onChange: (cb: (shortName: string) => void) => void;
 }
 
 export function createModelSelector(renderer: GlassesRenderer): ModelSelector {
-    const container = document.createElement('div');
-    container.id = 'model-selector';
+    // Optional — the production UI has no model-card list (nav is via side buttons)
+    const container = document.getElementById('model-selector');
 
     let currentIdx = loadSelectedIndex();
     const modelOverrides = loadModelOverrides();
     const cards: HTMLDivElement[] = [];
     let tweakPanel: TweakPanel | null = null;
+    let changeCb: ((shortName: string) => void) | null = null;
 
     function updateActiveCard(): void {
         cards.forEach((c, i) => {
@@ -124,32 +149,33 @@ export function createModelSelector(renderer: GlassesRenderer): ModelSelector {
         tweakPanel?.syncSliders();
 
         renderer.selectModel(currentIdx, direction);
+        changeCb?.(MODELS[currentIdx].shortName);
     }
 
-    // Create placeholder cards
-    for (let i = 0; i < MODELS.length; i++) {
-        const card = document.createElement('div');
-        card.className = 'model-card';
-        if (i === currentIdx) card.classList.add('active');
+    // Create placeholder cards (only when a card container is present)
+    if (container) {
+        for (let i = 0; i < MODELS.length; i++) {
+            const card = document.createElement('div');
+            card.className = 'model-card';
+            if (i === currentIdx) card.classList.add('active');
 
-        const label = document.createElement('span');
-        label.className = 'model-card-label';
-        label.textContent = MODELS[i].name;
-        card.appendChild(label);
+            const label = document.createElement('span');
+            label.className = 'model-card-label';
+            label.textContent = MODELS[i].name;
+            card.appendChild(label);
 
-        card.addEventListener('click', () => {
-            const direction = i > currentIdx ? 1 : -1;
-            selectModel(i, direction);
-        });
+            card.addEventListener('click', () => {
+                const direction = i > currentIdx ? 1 : -1;
+                selectModel(i, direction);
+            });
 
-        cards.push(card);
-        container.appendChild(card);
+            cards.push(card);
+            container.appendChild(card);
+        }
     }
-
-    document.body.appendChild(container);
 
     return {
-        element: container,
+        element: container ?? document.createElement('div'),
         setTweakPanel(panel: TweakPanel) {
             tweakPanel = panel;
         },
@@ -159,13 +185,16 @@ export function createModelSelector(renderer: GlassesRenderer): ModelSelector {
             // Apply initial model's params
             renderer.updateParams(getModelParams(currentIdx));
             renderer.selectModel(currentIdx, 0);
+            changeCb?.(MODELS[currentIdx].shortName);
 
-            // Render 3D thumbnails
-            for (let i = 0; i < MODELS.length; i++) {
-                renderThumbnail(MODELS[i].url).then((thumbCanvas) => {
-                    thumbCanvas.className = 'model-card-thumb';
-                    cards[i].insertBefore(thumbCanvas, cards[i].firstChild);
-                });
+            // Render 3D thumbnails (only if cards exist)
+            if (cards.length) {
+                for (let i = 0; i < MODELS.length; i++) {
+                    renderThumbnail(MODELS[i].url).then((thumbCanvas) => {
+                        thumbCanvas.className = 'model-card-thumb';
+                        cards[i].insertBefore(thumbCanvas, cards[i].firstChild);
+                    });
+                }
             }
         },
         next() {
@@ -173,6 +202,12 @@ export function createModelSelector(renderer: GlassesRenderer): ModelSelector {
         },
         prev() {
             selectModel(currentIdx - 1, -1);
+        },
+        currentShortName() {
+            return MODELS[currentIdx].shortName;
+        },
+        onChange(cb) {
+            changeCb = cb;
         },
     };
 }

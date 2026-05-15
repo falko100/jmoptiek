@@ -3,69 +3,75 @@ import {
     FilesetResolver,
 } from '@mediapipe/tasks-vision';
 
-export type ButtonSide = 'left' | 'right';
-export type ButtonCallback = (side: ButtonSide) => void;
+export interface ButtonConfig {
+    id: string;
+    /** Rect in canvas pixel coordinates (mirrored X — same space as hand landmarks output) */
+    rect: { x: number; y: number; w: number; h: number };
+}
 
-export interface GestureEvent {
-    type: 'hand_enter' | 'hand_leave' | 'zone_enter' | 'zone_leave' | 'button_press' | 'cooldown_blocked';
-    detail?: string;
+export interface ButtonState {
+    id: string;
+    /** Dwell progress 0–1 */
+    progress: number;
+    occupied: boolean;
 }
 
 export interface HandDebugInfo {
-    wristX: number;
-    wristY: number;
-    zone: ButtonSide | null;
+    /** All 21 hand landmarks in canvas pixel space (mirrored X) */
+    landmarks: { x: number; y: number; z: number }[];
+}
+
+export interface GestureEvent {
+    type:
+        | 'hand_enter'
+        | 'hand_leave'
+        | 'button_enter'
+        | 'button_leave'
+        | 'button_trigger'
+        | 'cooldown_blocked';
+    detail?: string;
 }
 
 export interface GestureDebugInfo {
     handsDetected: number;
     hands: HandDebugInfo[];
-    /** Fill progress for left button (0–1) */
-    leftProgress: number;
-    /** Fill progress for right button (0–1) */
-    rightProgress: number;
+    buttons: ButtonState[];
     cooldownRemaining: number;
     events: GestureEvent[];
 }
 
+export type ButtonTriggerCallback = (buttonId: string) => void;
 export type DebugCallback = (info: GestureDebugInfo) => void;
 
-const MAX_HANDS = 2;
+const MAX_HANDS = 4;
 
 /**
- * Detects hand-in-zone gestures using MediaPipe Hand Landmarker.
- *
- * Two trigger zones sit in the left and right edges of the frame.
- * When a hand (index finger tip) dwells in a zone long enough,
- * the corresponding button fires.
+ * Detects when a hand "touches" any of the registered button rects.
+ * Buttons are defined in canvas pixel space. Any hand landmark inside
+ * a button rect counts as a touch; once dwelled long enough, the button fires.
  */
 export class GestureDetector {
     private handLandmarker: HandLandmarker | null = null;
-    private callback: ButtonCallback | null = null;
+    private triggerCallback: ButtonTriggerCallback | null = null;
     private debugCallback: DebugCallback | null = null;
 
-    /** How far from the edge (normalised 0–1) the trigger zone extends */
-    private static readonly ZONE_WIDTH = 0.15;
-
-    /** Time in ms the hand must stay in the zone to fire */
+    /** Time in ms the hand must stay on a button to fire */
     private static readonly DWELL_TIME = 600;
 
-    /** Cooldown after a button press before another can fire */
-    private static readonly COOLDOWN = 1200;
+    /** Cooldown after any button fires before another can fire */
+    private static readonly COOLDOWN = 1000;
 
-    /** Visible bounds in normalised video coords (set from cover transform) */
-    private visLeft = 0;
-    private visRight = 1;
-    private visTop = 0;
-    private visBottom = 1;
+    /** Cover transform — used to map normalised landmarks to canvas pixels */
+    private drawW = 1;
+    private drawH = 1;
+    private offsetX = 0;
+    private offsetY = 0;
 
-    /** Accumulated dwell time per zone */
-    private dwellAccum: Record<ButtonSide, number> = { left: 0, right: 0 };
+    private buttons: ButtonConfig[] = [];
+    private dwellAccum = new Map<string, number>();
+    private wasOccupied = new Map<string, boolean>();
 
-    /** Was any hand in this zone last frame? */
-    private wasInZone: Record<ButtonSide, boolean> = { left: false, right: false };
-
-    private lastPressTime = 0;
+    private lastTriggerTime = -Infinity;
     private prevHandCount = 0;
     private lastTimestamp = 0;
 
@@ -85,37 +91,27 @@ export class GestureDetector {
         });
     }
 
-    onButton(cb: ButtonCallback): void {
-        this.callback = cb;
+    setButtons(buttons: ButtonConfig[]): void {
+        this.buttons = buttons;
+        for (const b of buttons) {
+            if (!this.dwellAccum.has(b.id)) this.dwellAccum.set(b.id, 0);
+            if (!this.wasOccupied.has(b.id)) this.wasOccupied.set(b.id, false);
+        }
+    }
+
+    onTrigger(cb: ButtonTriggerCallback): void {
+        this.triggerCallback = cb;
     }
 
     onDebug(cb: DebugCallback): void {
         this.debugCallback = cb;
     }
 
-    /** Update the visible region from the cover transform. */
-    setVisibleBounds(drawW: number, drawH: number, offsetX: number, offsetY: number, canvasW: number, canvasH: number): void {
-        this.visLeft = -offsetX / drawW;
-        this.visRight = (canvasW - offsetX) / drawW;
-        this.visTop = -offsetY / drawH;
-        this.visBottom = (canvasH - offsetY) / drawH;
-    }
-
-    /**
-     * Determine which zone a normalised coordinate falls in.
-     * Only triggers within the visible (non-cropped) region of the video.
-     * MediaPipe coords are NOT mirrored: x=0 is left-of-camera (right on screen).
-     */
-    private getZone(x: number, y: number): ButtonSide | null {
-        // Ignore hands outside the visible canvas area
-        if (x < this.visLeft || x > this.visRight || y < this.visTop || y > this.visBottom) {
-            return null;
-        }
-        const visW = this.visRight - this.visLeft;
-        const zoneW = GestureDetector.ZONE_WIDTH * visW;
-        if (x <= this.visLeft + zoneW) return 'right';
-        if (x >= this.visRight - zoneW) return 'left';
-        return null;
+    setVisibleBounds(drawW: number, drawH: number, offsetX: number, offsetY: number): void {
+        this.drawW = drawW;
+        this.drawH = drawH;
+        this.offsetX = offsetX;
+        this.offsetY = offsetY;
     }
 
     detect(video: HTMLVideoElement, timestampMs: number): void {
@@ -129,7 +125,6 @@ export class GestureDetector {
         const events: GestureEvent[] = [];
         const handCount = result.landmarks?.length ?? 0;
 
-        // Hand enter/leave
         if (handCount > this.prevHandCount) {
             events.push({ type: 'hand_enter', detail: `${handCount} hand(s)` });
         } else if (handCount < this.prevHandCount) {
@@ -137,80 +132,81 @@ export class GestureDetector {
         }
         this.prevHandCount = handCount;
 
-        // Track which zones have a hand this frame
-        const zonesOccupied: Record<ButtonSide, boolean> = { left: false, right: false };
+        // Convert all hand landmarks to canvas pixel space (mirrored X)
+        const handsCanvas: { x: number; y: number; z: number }[][] = [];
         const handInfos: HandDebugInfo[] = [];
-
         for (let h = 0; h < handCount; h++) {
-            // Use index finger tip (landmark 8) — more precise than wrist for targeting
-            const tip = result.landmarks![h][8];
-            const zone = this.getZone(tip.x, tip.y);
-
-            if (zone) {
-                zonesOccupied[zone] = true;
-            }
-
-            handInfos.push({
-                wristX: tip.x,
-                wristY: tip.y,
-                zone,
-            });
+            const lm = result.landmarks![h];
+            const canvasLm = lm.map((pt) => ({
+                x: (1 - pt.x) * this.drawW + this.offsetX,
+                y: pt.y * this.drawH + this.offsetY,
+                z: pt.z,
+            }));
+            handsCanvas.push(canvasLm);
+            handInfos.push({ landmarks: canvasLm });
         }
 
-        // Update dwell accumulators for each zone
-        for (const side of ['left', 'right'] as ButtonSide[]) {
-            if (zonesOccupied[side]) {
-                // Zone enter event
-                if (!this.wasInZone[side]) {
-                    events.push({ type: 'zone_enter', detail: side });
+        const buttonStates: ButtonState[] = [];
+        for (const btn of this.buttons) {
+            const r = btn.rect;
+            let occupied = false;
+            outer: for (const hand of handsCanvas) {
+                for (const pt of hand) {
+                    if (
+                        pt.x >= r.x && pt.x <= r.x + r.w &&
+                        pt.y >= r.y && pt.y <= r.y + r.h
+                    ) {
+                        occupied = true;
+                        break outer;
+                    }
                 }
+            }
 
-                this.dwellAccum[side] += dt;
+            const wasOcc = this.wasOccupied.get(btn.id) || false;
+            let accum = this.dwellAccum.get(btn.id) || 0;
 
-                // Check if dwell is complete
-                if (this.dwellAccum[side] >= GestureDetector.DWELL_TIME) {
-                    if (now - this.lastPressTime > GestureDetector.COOLDOWN) {
-                        this.lastPressTime = now;
-                        this.dwellAccum[side] = 0;
-                        events.push({ type: 'button_press', detail: side });
-                        this.callback?.(side);
+            if (occupied) {
+                if (!wasOcc) events.push({ type: 'button_enter', detail: btn.id });
+                accum += dt;
+
+                if (accum >= GestureDetector.DWELL_TIME) {
+                    if (now - this.lastTriggerTime > GestureDetector.COOLDOWN) {
+                        this.lastTriggerTime = now;
+                        accum = 0;
+                        events.push({ type: 'button_trigger', detail: btn.id });
+                        this.triggerCallback?.(btn.id);
                     } else {
-                        events.push({ type: 'cooldown_blocked', detail: `${side}, ${Math.round(GestureDetector.COOLDOWN - (now - this.lastPressTime))}ms` });
-                        // Cap the accumulator so it doesn't overflow
-                        this.dwellAccum[side] = GestureDetector.DWELL_TIME;
+                        events.push({ type: 'cooldown_blocked', detail: btn.id });
+                        accum = GestureDetector.DWELL_TIME;
                     }
                 }
             } else {
-                // Zone leave event
-                if (this.wasInZone[side]) {
-                    events.push({ type: 'zone_leave', detail: side });
-                }
-                // Decay the accumulator quickly when hand leaves
-                this.dwellAccum[side] = Math.max(0, this.dwellAccum[side] - dt * 3);
+                if (wasOcc) events.push({ type: 'button_leave', detail: btn.id });
+                accum = Math.max(0, accum - dt * 3);
             }
 
-            this.wasInZone[side] = zonesOccupied[side];
+            this.dwellAccum.set(btn.id, accum);
+            this.wasOccupied.set(btn.id, occupied);
+
+            buttonStates.push({
+                id: btn.id,
+                progress: Math.min(accum / GestureDetector.DWELL_TIME, 1),
+                occupied,
+            });
         }
 
-        this.emitDebug(handCount, handInfos, now, events);
-    }
-
-    private emitDebug(
-        handsDetected: number,
-        hands: HandDebugInfo[],
-        now: number,
-        events: GestureEvent[],
-    ): void {
-        if (!this.debugCallback) return;
-        const cooldownRemaining = Math.max(0, GestureDetector.COOLDOWN - (now - this.lastPressTime));
-        this.debugCallback({
-            handsDetected,
-            hands,
-            leftProgress: Math.min(this.dwellAccum.left / GestureDetector.DWELL_TIME, 1),
-            rightProgress: Math.min(this.dwellAccum.right / GestureDetector.DWELL_TIME, 1),
-            cooldownRemaining,
-            events,
-        });
+        if (this.debugCallback) {
+            this.debugCallback({
+                handsDetected: handCount,
+                hands: handInfos,
+                buttons: buttonStates,
+                cooldownRemaining: Math.max(
+                    0,
+                    GestureDetector.COOLDOWN - (now - this.lastTriggerTime),
+                ),
+                events,
+            });
+        }
     }
 
     dispose(): void {

@@ -7,8 +7,10 @@ import { GestureDetector } from './gesture-detector.ts';
 import { createTweakPanel } from './tweak-panel.ts';
 import { createModelSelector, type ModelSelector } from './model-selector.ts';
 import { createGestureDebug } from './gesture-debug.ts';
-import { createCornerButtons } from './corner-buttons.ts';
+import { createCanvasButtons } from './canvas-buttons.ts';
 import { drawFaceDebug } from './face-debug.ts';
+import { drawHandDebug } from './hand-debug.ts';
+import type { GestureDebugInfo } from './gesture-detector.ts';
 
 // DOM elements
 const webcamCanvas = document.getElementById('webcam-canvas') as HTMLCanvasElement;
@@ -26,22 +28,36 @@ const glassesRenderer = new GlassesRenderer(glassesCanvas);
 let trackerReady = false;
 let gestureReady = false;
 let showFaceDebug = false;
+let latestGestureDebug: GestureDebugInfo | null = null;
+
+const noFaceOverlay = document.getElementById('no-face-overlay')!;
+let lastFaceSeenAt = 0;
+const NO_FACE_DELAY_MS = 1500;
+const MAX_FACE_DISTANCE = 60;
 
 // ---------------------------------------------------------------------------
 // Canvas sizing — full screen, video covers with aspect ratio preserved
 // ---------------------------------------------------------------------------
 
-function sizeCanvases(): void {
-    if (!camera.isActive) return;
+const APP_W = 1080;
+const APP_H = 1920;
+const CAMERA_SIZE = 820;
+const appEl = document.getElementById('app') as HTMLDivElement;
 
-    const viewW = document.documentElement.clientWidth;
-    const viewH = document.documentElement.clientHeight;
-
-    webcamRenderer.setSize(viewW, viewH);
-    glassesRenderer.setSize(viewW, viewH);
+function scaleApp(): void {
+    const scale = Math.min(window.innerWidth / APP_W, window.innerHeight / APP_H);
+    appEl.style.transform = `scale(${scale})`;
 }
 
-window.addEventListener('resize', sizeCanvases);
+scaleApp();
+window.addEventListener('resize', scaleApp);
+
+function sizeCanvases(): void {
+    if (!camera.isActive) return;
+    webcamRenderer.setSize(CAMERA_SIZE, CAMERA_SIZE);
+    glassesRenderer.setSize(CAMERA_SIZE, CAMERA_SIZE);
+}
+
 
 // ---------------------------------------------------------------------------
 // Render loop
@@ -69,9 +85,22 @@ function renderLoop(): void {
         );
         glassesRenderer.render(poses);
 
-        if (showFaceDebug && poses.length > 0) {
+        const closeEnough = poses.some(p => p.distance <= MAX_FACE_DISTANCE);
+        if (closeEnough) {
+            lastFaceSeenAt = now;
+            noFaceOverlay.classList.add('hidden');
+        } else if (now - lastFaceSeenAt > NO_FACE_DELAY_MS) {
+            noFaceOverlay.classList.remove('hidden');
+        }
+
+        if (showFaceDebug) {
             const ctx = webcamCanvas.getContext('2d');
-            if (ctx) drawFaceDebug(ctx, poses);
+            if (ctx) {
+                if (poses.length > 0) drawFaceDebug(ctx, poses);
+                if (latestGestureDebug && latestGestureDebug.hands.length > 0) {
+                    drawHandDebug(ctx, latestGestureDebug.hands);
+                }
+            }
         }
     }
 
@@ -81,8 +110,6 @@ function renderLoop(): void {
             webcamRenderer.coverDrawH,
             webcamRenderer.coverOffsetX,
             webcamRenderer.coverOffsetY,
-            webcamCanvas.width,
-            webcamCanvas.height,
         );
         gestureTimestamp = Math.max(gestureTimestamp + 1, Math.floor(now) + 1);
         gesture.detect(video, gestureTimestamp);
@@ -112,9 +139,23 @@ async function start(): Promise<void> {
         const tweakPanel = createTweakPanel(glassesRenderer);
         selector.setTweakPanel(tweakPanel);
 
-        // Corner buttons + gesture detection
-        const cornerButtons = createCornerButtons();
+        // Canvas-edge buttons (touch via click or hand-dwell)
+        const canvasButtons = createCanvasButtons();
         const gestureDebug = createGestureDebug();
+
+        canvasButtons.onPrev(() => selector.prev());
+        canvasButtons.onNext(() => selector.next());
+        selector.onChange((shortName) => canvasButtons.setModel(shortName));
+        canvasButtons.setModel(selector.currentShortName());
+        canvasButtons.onTypeChange((_type) => {
+            // TODO: filter models by category once sunglasses models exist
+        });
+        canvasButtons.onPaszone(() => {
+            // TODO: paszone calibration flow
+        });
+        canvasButtons.onQR(() => {
+            // TODO: open booking link / QR
+        });
 
         // Start hidden
         tweakPanel.element.classList.add('hidden');
@@ -165,15 +206,13 @@ async function start(): Promise<void> {
         statusEl.textContent = 'Loading gesture detection...';
         gesture.init().then(() => {
             gestureReady = true;
-            gesture.onButton((side) => {
-                if (side === 'right') {
-                    selector.next();
-                } else {
-                    selector.prev();
-                }
-            });
+            gesture.setButtons(canvasButtons.getButtonConfigs());
+            gesture.onTrigger((id) => canvasButtons.trigger(id));
             gesture.onDebug((info) => {
-                cornerButtons.update(info);
+                latestGestureDebug = info;
+                for (const btn of info.buttons) {
+                    canvasButtons.setProgress(btn.id, btn.progress);
+                }
                 gestureDebug.update(info);
             });
         });

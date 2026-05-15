@@ -25,7 +25,7 @@ export class FaceTracker {
                 delegate: 'GPU',
             },
             runningMode: 'VIDEO',
-            numFaces: 4,
+            numFaces: 2,
             outputFaceBlendshapes: false,
             outputFacialTransformationMatrixes: true,
         });
@@ -140,7 +140,9 @@ export class FaceTracker {
                 z: pt.z * drawW,
             }));
 
-            return { center, faceCenter, eyeDistance, faceHeight, faceWidth, matrix, roll, quaternion, landmarks, allLandmarks };
+            const distance = Math.abs(matrix[14]);
+
+            return { center, faceCenter, eyeDistance, faceHeight, faceWidth, distance, matrix, roll, quaternion, landmarks, allLandmarks };
         });
     }
 

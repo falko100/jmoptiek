@@ -18,6 +18,8 @@ export interface FacePose {
     faceWidth: number;
     /** 4x4 column-major facial transformation matrix from MediaPipe */
     matrix: Float32Array;
+    /** Distance from face to camera in cm (from transformation matrix Z translation) */
+    distance: number;
     /** In-plane rotation angle in radians (tilt between eyes) */
     roll: number;
     /** Rotation quaternion (computed from matrix with mirroring) */

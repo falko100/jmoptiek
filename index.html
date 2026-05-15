@@ -1,14 +1,56 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="nl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Glasses Preview</title>
+    <meta name="viewport" content="width=1080, height=1920, initial-scale=1.0, user-scalable=no">
+    <title>JM Brilspiegel</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Metrophobic&display=swap" rel="stylesheet">
 </head>
 <body>
-    <canvas id="webcam-canvas"></canvas>
-    <canvas id="glasses-canvas"></canvas>
-    <div id="status">Starting camera...</div>
+    <div id="app">
+        <header id="header">
+            <img id="logo" src="/logo.png" alt="JM Optiek">
+            <span id="header-title">Digitale Paskamer</span>
+        </header>
+
+        <div id="type-toggle"></div>
+
+        <div id="camera-section">
+            <div id="side-nav-left" class="side-nav"></div>
+
+            <div id="camera-card">
+                <div id="camera-area">
+                    <canvas id="webcam-canvas"></canvas>
+                    <canvas id="glasses-canvas"></canvas>
+                    <div id="status">Camera starten...</div>
+                </div>
+                <div id="paszone-slot"></div>
+            </div>
+
+            <div id="side-nav-right" class="side-nav"></div>
+        </div>
+
+        <div id="qr-card"></div>
+
+        <div id="privacy-card"></div>
+
+        <div id="no-face-overlay" class="hidden">
+            <svg class="overlay-grain" width="0" height="0">
+                <filter id="grain-filter">
+                    <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch"/>
+                    <feColorMatrix type="saturate" values="0"/>
+                </filter>
+            </svg>
+            <div class="overlay-clouds"></div>
+            <div class="overlay-grain-layer"></div>
+            <div class="overlay-content">
+                <img class="footprints-icon" src="/shoe-prints-solid-full.svg" alt="">
+                <span class="no-face-text">Ga op de voetstappen staan</span>
+            </div>
+        </div>
+    </div>
 
     <video id="webcam" autoplay playsinline></video>
 

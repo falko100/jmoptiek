@@ -192,7 +192,7 @@ export function createTweakPanel(renderer: GlassesRenderer): TweakPanel {
     });
     panel.appendChild(resetBtn);
 
-    document.body.appendChild(panel);
+    document.getElementById('camera-area')!.appendChild(panel);
 
     /** Sync all slider UI elements to the current renderer.params values */
     function syncSliders(): void {

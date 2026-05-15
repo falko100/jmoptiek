@@ -91,6 +91,9 @@ export function drawFaceDebug(
         const templeMidY = (landmarks.leftTemple.y + landmarks.rightTemple.y) / 2;
         drawLabel(ctx, `w3D: ${faceWidth.toFixed(1)}px`, templeMidX, templeMidY + 14, '#ff00ff');
 
+        // Distance label — above forehead
+        drawLabel(ctx, `dist: ${Math.round(pose.distance)}cm`, landmarks.forehead.x - 30, landmarks.forehead.y - 28, '#ffff00');
+
         // Euler angles from quaternion for readability
         const euler = new THREE.Euler().setFromQuaternion(quaternion, 'XYZ');
         const deg = 180 / Math.PI;
