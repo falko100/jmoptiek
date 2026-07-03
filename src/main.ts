@@ -45,12 +45,20 @@ const CAMERA_SIZE = 820;
 const appEl = document.getElementById('app') as HTMLDivElement;
 
 function scaleApp(): void {
-    const scale = Math.min(window.innerWidth / APP_W, window.innerHeight / APP_H);
+    // Prefer the visual viewport (iOS Safari accounts for the URL bar there),
+    // falling back to the layout viewport.
+    const vw = window.visualViewport?.width ?? window.innerWidth;
+    const vh = window.visualViewport?.height ?? window.innerHeight;
+    const scale = Math.min(vw / APP_W, vh / APP_H);
     appEl.style.transform = `scale(${scale})`;
 }
 
 scaleApp();
 window.addEventListener('resize', scaleApp);
+window.addEventListener('orientationchange', scaleApp);
+window.visualViewport?.addEventListener('resize', scaleApp);
+// iOS sometimes reports a stale innerHeight on first paint — re-fit once settled.
+window.addEventListener('load', scaleApp);
 
 function sizeCanvases(): void {
     if (!camera.isActive) return;
