@@ -7,6 +7,7 @@ import { GestureDetector } from './gesture-detector.ts';
 import { createTweakPanel } from './tweak-panel.ts';
 import { createModelSelector, type ModelSelector } from './model-selector.ts';
 import { createGestureDebug } from './gesture-debug.ts';
+import { createDistanceDebug } from './distance-debug.ts';
 import { createCanvasButtons } from './canvas-buttons.ts';
 import { drawFaceDebug } from './face-debug.ts';
 import { drawHandDebug } from './hand-debug.ts';
@@ -29,11 +30,12 @@ let trackerReady = false;
 let gestureReady = false;
 let showFaceDebug = false;
 let latestGestureDebug: GestureDebugInfo | null = null;
+let distanceDebug: ReturnType<typeof createDistanceDebug> | null = null;
 
 const noFaceOverlay = document.getElementById('no-face-overlay')!;
 let lastFaceSeenAt = 0;
 const NO_FACE_DELAY_MS = 1500;
-const MAX_FACE_DISTANCE = 60;
+const MAX_FACE_DISTANCE = 95;
 
 // ---------------------------------------------------------------------------
 // Canvas sizing — full screen, video covers with aspect ratio preserved
@@ -93,6 +95,8 @@ function renderLoop(): void {
         );
         glassesRenderer.render(poses);
 
+        distanceDebug?.update(poses);
+
         const closeEnough = poses.some(p => p.distance <= MAX_FACE_DISTANCE);
         if (closeEnough) {
             lastFaceSeenAt = now;
@@ -150,6 +154,7 @@ async function start(): Promise<void> {
         // Canvas-edge buttons (touch via click or hand-dwell)
         const canvasButtons = createCanvasButtons();
         const gestureDebug = createGestureDebug();
+        distanceDebug = createDistanceDebug(MAX_FACE_DISTANCE);
 
         canvasButtons.onPrev(() => selector.prev());
         canvasButtons.onNext(() => selector.next());
@@ -168,6 +173,7 @@ async function start(): Promise<void> {
         // Start hidden
         tweakPanel.element.classList.add('hidden');
         gestureDebug.element.classList.add('hidden');
+        distanceDebug.setEnabled(false);
 
         // Toggle debug UIs with keyboard shortcuts
         window.addEventListener('keydown', (e) => {
@@ -179,6 +185,10 @@ async function start(): Promise<void> {
             }
             if (e.key === 'f' || e.key === 'F') {
                 showFaceDebug = !showFaceDebug;
+            }
+            if (e.key === 'g' || e.key === 'G') {
+                const isEnabled = !distanceDebug!.element.classList.contains('hidden');
+                distanceDebug!.setEnabled(!isEnabled);
             }
         });
 
