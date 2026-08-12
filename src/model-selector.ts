@@ -2,45 +2,70 @@ import { GlassesRenderer, DEFAULT_PARAMS, type GlassesParams } from './glasses-r
 import { renderThumbnail } from './model-thumbnail.ts';
 import type { TweakPanel } from './tweak-panel.ts';
 
+/** Product category — drives the glasses/sunglasses toggle. */
+export type GlassesCategory = 'glasses' | 'sunglasses';
+
 export interface GlassesModel {
     name: string;
     url: string;
     /** Short, URL-safe identifier used in the booking QR link */
     shortName: string;
+    /** Product category — determines which toggle tab shows this model */
+    type: GlassesCategory;
     /** Per-model param overrides (merged on top of DEFAULT_PARAMS) */
     defaults?: Partial<GlassesParams>;
 }
 
+/** Payload emitted whenever the selected model changes. */
+export interface ModelChange {
+    name: string;
+    shortName: string;
+    /** Category of the selected model */
+    type: GlassesCategory;
+    /** 0-based index within the current category */
+    index: number;
+    /** Total number of models in the current category */
+    total: number;
+}
+
+// `type` marks each model as regular glasses or sunglasses — it drives which
+// tab (Brillen / Zonnebrillen) the model appears under.
 const MODELS: GlassesModel[] = [
     // { name: 'Brille', url: '/glasses/brille.glb' },
     {
         name: 'S Black White Blue',
         shortName: 'sbwb',
+        type: 'sunglasses',
         url: '/glasses/S_BLACK WHITE_BLUE_complete.glb',
     },
     {
         name: 'Tommy Hilfiger 2338 Gold',
         shortName: 'th2338',
+        type: 'glasses',
         url: '/glasses/TH_2338.glb',
     },
     {
         name: 'David Beckham 1217 Silver',
         shortName: 'db1217s',
+        type: 'sunglasses',
         url: '/glasses/DB1217S.glb',
     },
     {
         name: 'David Beckham 1237 Gold',
         shortName: 'db1237-gold',
+        type: 'glasses',
         url: '/glasses/ARS_Library_Product_Data_2F1107912W85320_2F3dModels_2FurlGlobal_2FDB1237_1107912W85320_CUT_051225_1.glb',
     },
     {
         name: 'David Beckham 1237 Black',
         shortName: 'db1237-black',
+        type: 'glasses',
         url: '/glasses/ARS_Library_Product_Data_2F110791KB75320_2F3dModels_2FurlGlobalComplete_2FDB1237_110791KB75320_FULL_051225_3.glb',
     },
     {
         name: 'Smith Lowdown XL2',
         shortName: 'lowdownxl2',
+        type: 'sunglasses',
         url: '/glasses/LOWDOWNXL2_201514003601H_CUT.glb',
     },
 ];
@@ -93,8 +118,16 @@ export interface ModelSelector {
     setTweakPanel: (panel: TweakPanel) => void;
     /** Short name of the currently selected model */
     currentShortName: () => string;
+    /** Category (glasses/sunglasses) of the current selection */
+    currentType: () => GlassesCategory;
+    /** Switch to a category, selecting its first model (no-op if empty) */
+    setType: (type: GlassesCategory) => void;
+    /** Switch to the other category (used by the 3-finger gesture) */
+    toggleType: () => void;
     /** Fired whenever the selected model changes (incl. initial selection) */
-    onChange: (cb: (shortName: string) => void) => void;
+    onChange: (cb: (change: ModelChange) => void) => void;
+    /** Re-emit the current selection to the onChange listener */
+    refresh: () => void;
 }
 
 export function createModelSelector(renderer: GlassesRenderer): ModelSelector {
@@ -102,10 +135,31 @@ export function createModelSelector(renderer: GlassesRenderer): ModelSelector {
     const container = document.getElementById('model-selector');
 
     let currentIdx = loadSelectedIndex();
+    let currentType: GlassesCategory = MODELS[currentIdx].type;
     const modelOverrides = loadModelOverrides();
     const cards: HTMLDivElement[] = [];
     let tweakPanel: TweakPanel | null = null;
-    let changeCb: ((shortName: string) => void) | null = null;
+    let changeCb: ((change: ModelChange) => void) | null = null;
+
+    /** Model indices belonging to a category, in list order. */
+    function indicesOfType(type: GlassesCategory): number[] {
+        const out: number[] = [];
+        MODELS.forEach((m, i) => { if (m.type === type) out.push(i); });
+        return out;
+    }
+
+    function emitChange(): void {
+        const m = MODELS[currentIdx];
+        const list = indicesOfType(currentType);
+        const pos = list.indexOf(currentIdx);
+        changeCb?.({
+            name: m.name,
+            shortName: m.shortName,
+            type: currentType,
+            index: pos < 0 ? 0 : pos,
+            total: list.length,
+        });
+    }
 
     function updateActiveCard(): void {
         cards.forEach((c, i) => {
@@ -141,6 +195,7 @@ export function createModelSelector(renderer: GlassesRenderer): ModelSelector {
 
         const count = MODELS.length;
         currentIdx = ((idx % count) + count) % count;
+        currentType = MODELS[currentIdx].type;
         saveSelectedIndex(currentIdx);
         updateActiveCard();
 
@@ -149,7 +204,7 @@ export function createModelSelector(renderer: GlassesRenderer): ModelSelector {
         tweakPanel?.syncSliders();
 
         renderer.selectModel(currentIdx, direction);
-        changeCb?.(MODELS[currentIdx].shortName);
+        emitChange();
     }
 
     // Create placeholder cards (only when a card container is present)
@@ -185,7 +240,7 @@ export function createModelSelector(renderer: GlassesRenderer): ModelSelector {
             // Apply initial model's params
             renderer.updateParams(getModelParams(currentIdx));
             renderer.selectModel(currentIdx, 0);
-            changeCb?.(MODELS[currentIdx].shortName);
+            emitChange();
 
             // Render 3D thumbnails (only if cards exist)
             if (cards.length) {
@@ -198,16 +253,42 @@ export function createModelSelector(renderer: GlassesRenderer): ModelSelector {
             }
         },
         next() {
-            selectModel(currentIdx + 1, 1);
+            step(1);
         },
         prev() {
-            selectModel(currentIdx - 1, -1);
+            step(-1);
         },
         currentShortName() {
             return MODELS[currentIdx].shortName;
         },
+        currentType() {
+            return currentType;
+        },
+        setType(type: GlassesCategory) {
+            if (type === currentType) return;
+            const list = indicesOfType(type);
+            if (list.length === 0) return; // no models in this category — ignore
+            currentType = type;
+            const target = list[0];
+            selectModel(target, target > currentIdx ? 1 : -1);
+        },
+        toggleType() {
+            this.setType(currentType === 'glasses' ? 'sunglasses' : 'glasses');
+        },
         onChange(cb) {
             changeCb = cb;
         },
+        refresh() {
+            emitChange();
+        },
     };
+
+    /** Move to the next/previous model within the current category (wrapping). */
+    function step(dir: 1 | -1): void {
+        const list = indicesOfType(currentType);
+        if (list.length === 0) return;
+        const pos = list.indexOf(currentIdx);
+        const nextPos = ((pos + dir) % list.length + list.length) % list.length;
+        selectModel(list[nextPos], dir);
+    }
 }

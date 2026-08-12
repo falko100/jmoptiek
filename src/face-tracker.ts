@@ -61,7 +61,12 @@ export class FaceTracker {
     ): FacePose[] {
         if (!result.faceLandmarks?.length) return [];
 
-        return result.faceLandmarks.map((lm, i) => {
+        // Visible 1:1 window: the 16:9 feed is drawn "cover", cropping the
+        // left/right thirds off-screen. Faces whose nose falls outside this
+        // band are in the cropped area and are dropped below.
+        const visibleW = drawW + 2 * offsetX;
+
+        const poses = result.faceLandmarks.map((lm, i) => {
             const leftOuter = lm[FaceLandmark.LEFT_EYE_OUTER];
             const rightOuter = lm[FaceLandmark.RIGHT_EYE_OUTER];
             const noseBridge = lm[FaceLandmark.NOSE_BRIDGE];
@@ -144,6 +149,9 @@ export class FaceTracker {
 
             return { center, faceCenter, eyeDistance, faceHeight, faceWidth, distance, matrix, roll, quaternion, landmarks, allLandmarks };
         });
+
+        // Keep only faces whose nose bridge is inside the visible center window.
+        return poses.filter((p) => p.center.x >= 0 && p.center.x <= visibleW);
     }
 
     dispose(): void {

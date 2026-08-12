@@ -36,6 +36,12 @@ const noFaceOverlay = document.getElementById('no-face-overlay')!;
 let lastFaceSeenAt = 0;
 const NO_FACE_DELAY_MS = 1500;
 const MAX_FACE_DISTANCE = 95;
+// A child's head is smaller than the canonical model MediaPipe uses, so its
+// estimated cm distance is over-stated and a kid at the mirror reads as "too
+// far". As a head-size-independent fallback, also count a face as close enough
+// when it simply fills enough of the frame (forehead-to-chin ≥ this fraction of
+// the visible height) — tune if passers-by trigger it or kids still don't.
+const MIN_FACE_HEIGHT_FRACTION = 0.22;
 
 // ---------------------------------------------------------------------------
 // Canvas sizing — full screen, video covers with aspect ratio preserved
@@ -43,7 +49,7 @@ const MAX_FACE_DISTANCE = 95;
 
 const APP_W = 1080;
 const APP_H = 1920;
-const CAMERA_SIZE = 820;
+const CAMERA_SIZE = 1000;
 const appEl = document.getElementById('app') as HTMLDivElement;
 
 function scaleApp(): void {
@@ -95,9 +101,15 @@ function renderLoop(): void {
         );
         glassesRenderer.render(poses);
 
-        distanceDebug?.update(poses);
+        // Visible frame height in canvas px (cover-mapped video height).
+        const frameH = webcamRenderer.coverDrawH || CAMERA_SIZE;
+        distanceDebug?.update(poses, frameH);
 
-        const closeEnough = poses.some(p => p.distance <= MAX_FACE_DISTANCE);
+        const closeEnough = poses.some(
+            p =>
+                p.distance <= MAX_FACE_DISTANCE ||
+                p.faceHeight >= frameH * MIN_FACE_HEIGHT_FRACTION,
+        );
         if (closeEnough) {
             lastFaceSeenAt = now;
             noFaceOverlay.classList.add('hidden');
@@ -151,21 +163,27 @@ async function start(): Promise<void> {
         const tweakPanel = createTweakPanel(glassesRenderer);
         selector.setTweakPanel(tweakPanel);
 
-        // Canvas-edge buttons (touch via click or hand-dwell)
+        // On-screen buttons (tap) + debug panels
         const canvasButtons = createCanvasButtons();
         const gestureDebug = createGestureDebug();
-        distanceDebug = createDistanceDebug(MAX_FACE_DISTANCE);
+        distanceDebug = createDistanceDebug(MAX_FACE_DISTANCE, MIN_FACE_HEIGHT_FRACTION);
 
-        canvasButtons.onPrev(() => selector.prev());
-        canvasButtons.onNext(() => selector.next());
-        selector.onChange((shortName) => canvasButtons.setModel(shortName));
-        canvasButtons.setModel(selector.currentShortName());
-        canvasButtons.onTypeChange((_type) => {
-            // TODO: filter models by category once sunglasses models exist
+        // Bottom info bar — shows the currently selected glasses.
+        const infoName = document.getElementById('glasses-info-name')!;
+        const infoCount = document.getElementById('glasses-info-count')!;
+
+        // Category indicator in the header index (reflects glasses/sunglasses).
+        const typeGlassesEl = document.getElementById('gi-type-glasses')!;
+        const typeSunglassesEl = document.getElementById('gi-type-sunglasses')!;
+
+        selector.onChange((change) => {
+            canvasButtons.setModel(change.shortName);
+            infoName.textContent = change.name;
+            infoCount.textContent = `${change.index + 1} / ${change.total}`;
+            typeGlassesEl.classList.toggle('active', change.type === 'glasses');
+            typeSunglassesEl.classList.toggle('active', change.type === 'sunglasses');
         });
-        canvasButtons.onPaszone(() => {
-            // TODO: paszone calibration flow
-        });
+        selector.refresh(); // populate QR + info bar + indicator with the initial model
         canvasButtons.onQR(() => {
             // TODO: open booking link / QR
         });
@@ -224,13 +242,15 @@ async function start(): Promise<void> {
         statusEl.textContent = 'Loading gesture detection...';
         gesture.init().then(() => {
             gestureReady = true;
-            gesture.setButtons(canvasButtons.getButtonConfigs());
-            gesture.onTrigger((id) => canvasButtons.trigger(id));
+            gesture.onTrigger((action) => {
+                switch (action) {
+                    case 'next': selector.next(); break;
+                    case 'prev': selector.prev(); break;
+                    case 'type': selector.toggleType(); break;
+                }
+            });
             gesture.onDebug((info) => {
                 latestGestureDebug = info;
-                for (const btn of info.buttons) {
-                    canvasButtons.setProgress(btn.id, btn.progress);
-                }
                 gestureDebug.update(info);
             });
         });

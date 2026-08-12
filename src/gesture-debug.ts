@@ -3,12 +3,9 @@ import type { GestureDebugInfo, GestureEvent } from './gesture-detector.ts';
 const MAX_LOG_LINES = 50;
 
 const EVENT_STYLES: Record<GestureEvent['type'], { label: string; cls: string }> = {
-    hand_enter:       { label: 'HAND ENTER',       cls: 'gd-evt-enter' },
-    hand_leave:       { label: 'HAND LEAVE',       cls: 'gd-evt-leave' },
-    button_enter:     { label: 'BTN ENTER',        cls: 'gd-evt-threshold' },
-    button_leave:     { label: 'BTN LEAVE',        cls: 'gd-evt-threshold-lost' },
-    button_trigger:   { label: 'BTN TRIGGER',      cls: 'gd-evt-swipe' },
-    cooldown_blocked: { label: 'BLOCKED (cooldown)', cls: 'gd-evt-blocked' },
+    hand_enter:      { label: 'HAND ENTER',   cls: 'gd-evt-enter' },
+    hand_leave:      { label: 'HAND LEAVE',   cls: 'gd-evt-leave' },
+    gesture_trigger: { label: 'GESTURE',      cls: 'gd-evt-swipe' },
 };
 
 export function createGestureDebug(): {
@@ -54,25 +51,14 @@ export function createGestureDebug(): {
         log.scrollTop = log.scrollHeight;
     }
 
-    function progressBar(p: number): string {
-        const filled = Math.round(p * 10);
-        return '█'.repeat(filled).padEnd(10, '░');
-    }
-
     return {
         element: panel,
         update(info: GestureDebugInfo) {
             const lines: string[] = [
                 `<span class="gd-label">Hands</span> <span class="gd-val">${info.handsDetected}</span>`,
+                `<span class="gd-label">Gesture</span> <span class="gd-val gd-hot">${info.currentGesture}</span>`,
                 `<span class="gd-label">Cooldown</span> <span class="gd-val">${info.cooldownRemaining > 0 ? info.cooldownRemaining.toFixed(0) + 'ms' : 'ready'}</span>`,
             ];
-
-            for (const btn of info.buttons) {
-                const cls = btn.occupied ? 'gd-hot' : '';
-                lines.push(
-                    `<span class="gd-label">${btn.id}</span> <span class="gd-val gd-bar ${cls}">${progressBar(btn.progress)}</span> <span class="gd-val">${(btn.progress * 100).toFixed(0)}%</span>`,
-                );
-            }
 
             stats.innerHTML = lines.join('<br>');
 

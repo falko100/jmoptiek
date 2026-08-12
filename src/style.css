@@ -1,3 +1,14 @@
+:root {
+    /* Light theme tokens */
+    --text: #232733;
+    --text-muted: #6b7280;
+    --accent: #FECC1E;        /* brand yellow — fills, rings, tints */
+    --accent-fg: #a07a00;     /* deep gold — accent text/icons readable on light */
+    --border: rgba(0, 0, 0, 0.12);
+    --border-soft: rgba(0, 0, 0, 0.08);
+    --card-bg: #ffffff;
+}
+
 * {
     margin: 0;
     padding: 0;
@@ -8,9 +19,9 @@ html, body {
     width: 100%;
     height: 100%;
     overflow: hidden;
-    background: #06080f;
+    background: #e7ebf2;
     font-family: 'Metrophobic', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    color: #fff;
+    color: var(--text);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -26,8 +37,8 @@ html, body {
     align-items: center;
     padding: 36px 0 32px;
     background:
-        radial-gradient(ellipse 80% 50% at 50% 0%, rgba(40, 48, 78, 0.55), transparent 70%),
-        linear-gradient(180deg, #0a0e1a 0%, #070912 100%);
+        radial-gradient(ellipse 80% 50% at 50% 0%, rgba(254, 204, 30, 0.10), transparent 70%),
+        linear-gradient(180deg, #f7f9fc 0%, #e9edf4 100%);
 }
 
 /* ---- Header ---- */
@@ -38,6 +49,7 @@ html, body {
     align-items: center;
     justify-content: space-between;
     padding: 0 56px;
+    margin-top: 28px;
     flex-shrink: 0;
 }
 
@@ -47,60 +59,57 @@ html, body {
     object-fit: contain;
 }
 
-#header-title {
+/* Gesture action index (next to the logo) */
+#gesture-index {
+    display: flex;
+    align-items: flex-start;
+    gap: 52px;
+}
+
+.gi-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    min-width: 140px;
+}
+
+.gi-icon {
+    height: 96px;
+    width: auto;
+    object-fit: contain;
+}
+
+.gi-label {
     font-family: 'Metrophobic', sans-serif;
-    font-size: 3.2rem;
-    color: #FECC1E;
-    letter-spacing: 0.02em;
-}
-
-/* ---- Type toggle ---- */
-
-#type-toggle {
-    display: flex;
-    gap: 22px;
-    margin-top: 40px;
-    flex-shrink: 0;
-}
-
-.type-btn {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    padding: 20px 52px;
-    border: 1.5px solid rgba(255, 255, 255, 0.14);
-    border-radius: 60px;
-    background: transparent;
-    color: #7f8696;
-    font-family: inherit;
     font-size: 1.9rem;
-    cursor: pointer;
-    transition: border-color 0.25s, color 0.25s, background 0.25s;
-    user-select: none;
+    color: var(--text-muted);
+    text-align: center;
+    line-height: 1.15;
 }
 
-.type-btn:hover {
-    border-color: rgba(255, 255, 255, 0.28);
-    color: #c2c6d0;
-}
-
-.type-btn.active {
-    border-color: #FECC1E;
-    color: #FECC1E;
-    background: rgba(254, 204, 30, 0.06);
-}
-
-.type-btn .icon {
-    width: 38px;
-    height: 38px;
+/* Category indicator on the 3-finger (switch) item */
+.gi-switch {
     display: flex;
-    align-items: center;
-    justify-content: center;
+    align-items: baseline;
+    gap: 8px;
 }
 
-.type-btn .icon svg {
-    width: 100%;
-    height: 100%;
+.gi-opt {
+    color: var(--text-muted);
+    opacity: 0.5;
+    transition: color 0.2s, opacity 0.2s;
+}
+
+.gi-opt.active {
+    color: var(--accent-fg);
+    opacity: 1;
+    font-weight: 700;
+}
+
+.gi-sep {
+    color: var(--text-muted);
+    opacity: 0.5;
 }
 
 /* ---- Camera section ---- */
@@ -108,95 +117,27 @@ html, body {
 #camera-section {
     display: flex;
     align-items: center;
-    margin-top: 36px;
+    margin-top: 0;
     flex-shrink: 0;
-}
-
-.side-nav {
-    width: 130px;
-    height: 820px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 26px;
-}
-
-.side-nav-hand {
-    width: 44px;
-    height: 44px;
-    color: #FECC1E;
-    opacity: 0.65;
-}
-
-.side-nav-hand svg {
-    width: 100%;
-    height: 100%;
-}
-
-.side-nav-btn {
-    width: 72px;
-    height: 72px;
-    border-radius: 50%;
-    border: 1.5px solid rgba(255, 255, 255, 0.16);
-    background: rgba(255, 255, 255, 0.03);
-    color: #FECC1E;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: border-color 0.2s, background 0.2s, transform 0.1s;
-    position: relative;
-    overflow: hidden;
-}
-
-.side-nav-btn svg {
-    width: 34px;
-    height: 34px;
-    position: relative;
-    z-index: 1;
-}
-
-.side-nav-btn:hover {
-    border-color: rgba(254, 204, 30, 0.45);
-    background: rgba(255, 255, 255, 0.06);
-}
-
-.side-nav-btn:active {
-    transform: scale(0.94);
-}
-
-/* dwell-progress ring fill */
-.side-nav-btn .dwell {
-    position: absolute;
-    inset: 0;
-    background: rgba(254, 204, 30, 0.3);
-    transform: scaleY(var(--progress, 0));
-    transform-origin: bottom;
-    transition: transform 0.08s linear;
-}
-
-.cbtn-flash {
-    background: rgba(254, 204, 30, 0.4) !important;
-    border-color: #FECC1E !important;
 }
 
 #camera-card {
-    width: 820px;
-    height: 820px;
+    width: 1000px;
+    height: 1000px;
     position: relative;
     border-radius: 32px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    background: #0d1018;
+    border: 1px solid var(--border-soft);
+    background: #dfe4ec;
     overflow: hidden;
     flex-shrink: 0;
+    box-shadow: 0 12px 40px rgba(20, 30, 60, 0.12);
 }
 
 #camera-area {
     position: absolute;
     inset: 0;
-    width: 820px;
-    height: 820px;
+    width: 1000px;
+    height: 1000px;
     overflow: hidden;
 }
 
@@ -205,8 +146,8 @@ html, body {
     position: absolute;
     top: 0;
     left: 0;
-    width: 820px;
-    height: 820px;
+    width: 1000px;
+    height: 1000px;
 }
 
 #webcam-canvas { z-index: 0; }
@@ -304,10 +245,11 @@ html, body {
     width: 480px;
     height: auto;
     transform: rotate(-90deg);
+    fill: var(--accent);
     filter: drop-shadow(0 4px 16px rgba(0, 0, 0, 0.35));
-    opacity: 0.9;
+    opacity: 1;
     padding: 120px;
-    border: 5px solid rgba(255, 255, 255, 0.6);
+    border: 6px solid var(--accent);
     border-radius: 50%;
 }
 
@@ -338,54 +280,9 @@ html, body {
     color: #2ecc71;
 }
 
-/* Paszone overlay button (bottom-center of camera) */
-#paszone-slot {
-    position: absolute;
-    z-index: 3;
-    bottom: 30px;
-    left: 50%;
-    transform: translateX(-50%);
-}
-
-.paszone-btn {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    padding: 16px 38px;
-    border: 1.5px solid rgba(254, 204, 30, 0.55);
-    border-radius: 50px;
-    background: rgba(8, 10, 16, 0.6);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    color: #FECC1E;
-    font-family: inherit;
-    font-size: 1.6rem;
-    cursor: pointer;
-    transition: background 0.2s, border-color 0.2s;
-    user-select: none;
-}
-
-.paszone-btn:hover {
-    background: rgba(254, 204, 30, 0.12);
-}
-
-.paszone-btn .icon {
-    width: 30px;
-    height: 30px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.paszone-btn .icon svg {
-    width: 100%;
-    height: 100%;
-}
-
 /* ---- Card base ---- */
 
-#qr-card,
-#privacy-card {
+#qr-card {
     width: 1080px;
     flex-shrink: 0;
 }
@@ -394,9 +291,10 @@ html, body {
     margin: 0 auto;
     width: 1080px;
     max-width: 1080px;
-    border: 1px solid rgba(255, 255, 255, 0.07);
+    border: 1px solid var(--border-soft);
     border-radius: 26px;
-    background: rgba(255, 255, 255, 0.025);
+    background: var(--card-bg);
+    box-shadow: 0 8px 28px rgba(20, 30, 60, 0.08);
 }
 
 /* ---- QR card ---- */
@@ -428,7 +326,7 @@ html, body {
 .qr-divider {
     width: 1px;
     align-self: stretch;
-    background: rgba(255, 255, 255, 0.12);
+    background: var(--border);
     margin: 10px 56px;
 }
 
@@ -442,8 +340,8 @@ html, body {
     width: 84px;
     height: 84px;
     flex-shrink: 0;
-    color: #FECC1E;
-    border: 2px solid rgba(254, 204, 30, 0.35);
+    color: var(--accent-fg);
+    border: 2px solid rgba(160, 122, 0, 0.4);
     border-radius: 50%;
     display: flex;
     align-items: center;
@@ -461,84 +359,53 @@ html, body {
     gap: 8px;
 }
 
+.qr-brand {
+    font-family: 'Metrophobic', sans-serif;
+    font-size: 2.4rem;
+    color: var(--accent-fg);
+    letter-spacing: 0.02em;
+    margin-bottom: 2px;
+}
+
 .qr-title {
     font-size: 3rem;
-    color: #fff;
+    color: var(--text);
 }
 
 .qr-url {
     font-size: 1.7rem;
-    color: #FECC1E;
-    opacity: 0.85;
+    color: var(--accent-fg);
+    opacity: 0.9;
 }
 
-/* ---- Privacy card ---- */
+/* ---- Bottom info bar (current glasses) ---- */
 
-#privacy-card { margin-top: 26px; }
-
-.privacy-card {
-    padding: 28px 56px 34px;
-}
-
-.privacy-header {
+#glasses-info-bar {
+    margin: 24px auto 0;
+    width: 1080px;
+    flex-shrink: 0;
     display: flex;
     align-items: center;
-    justify-content: center;
-    gap: 14px;
-    font-size: 2rem;
-    color: #fff;
-    margin-bottom: 26px;
+    justify-content: space-between;
+    padding: 24px 56px;
+    border-radius: 26px;
+    border: 1px solid var(--border-soft);
+    background: var(--card-bg);
+    box-shadow: 0 8px 28px rgba(20, 30, 60, 0.08);
 }
 
-.privacy-header .shield {
-    width: 36px;
-    height: 36px;
-    color: #FECC1E;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+#glasses-info-name {
+    font-family: 'Metrophobic', sans-serif;
+    font-size: 2.4rem;
+    color: var(--text);
+    letter-spacing: 0.01em;
 }
 
-.privacy-header .shield svg {
-    width: 100%;
-    height: 100%;
-}
-
-.privacy-cols {
-    display: flex;
-    align-items: stretch;
-}
-
-.privacy-col {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 16px;
-    padding: 0 20px;
-}
-
-.privacy-col:not(:last-child) {
-    border-right: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.privacy-col .icon {
-    width: 52px;
-    height: 52px;
-    color: #FECC1E;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.privacy-col .icon svg {
-    width: 100%;
-    height: 100%;
-}
-
-.privacy-col .label {
-    font-size: 1.7rem;
-    color: #8a8f9e;
+#glasses-info-count {
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 1.6rem;
+    color: var(--accent-fg);
+    flex-shrink: 0;
 }
 
 /* ---- Debug visibility toggle ---- */

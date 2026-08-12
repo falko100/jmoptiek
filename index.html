@@ -10,31 +10,44 @@
 </head>
 <body>
     <div id="app">
-        <header id="header">
-            <img id="logo" src="/logo.png" alt="JM Optiek">
-            <span id="header-title">Digitale Paskamer</span>
-        </header>
-
-        <div id="type-toggle"></div>
-
         <div id="camera-section">
-            <div id="side-nav-left" class="side-nav"></div>
-
             <div id="camera-card">
                 <div id="camera-area">
                     <canvas id="webcam-canvas"></canvas>
                     <canvas id="glasses-canvas"></canvas>
                     <div id="status">Camera starten...</div>
                 </div>
-                <div id="paszone-slot"></div>
             </div>
-
-            <div id="side-nav-right" class="side-nav"></div>
         </div>
+
+        <header id="header">
+            <img id="logo" src="/logo.png" alt="JM Optiek">
+            <div id="gesture-index">
+                <div class="gi-item">
+                    <img class="gi-icon" src="/finger.png" alt="1 vinger">
+                    <span class="gi-label">Volgende</span>
+                </div>
+                <div class="gi-item">
+                    <img class="gi-icon" src="/peace.png" alt="2 vingers">
+                    <span class="gi-label">Vorige</span>
+                </div>
+                <div class="gi-item">
+                    <img class="gi-icon" src="/three-fingers.png" alt="3 vingers">
+                    <span class="gi-label gi-switch">
+                        <span class="gi-opt" id="gi-type-glasses">Bril</span>
+                        <span class="gi-sep">/</span>
+                        <span class="gi-opt" id="gi-type-sunglasses">Zonnebril</span>
+                    </span>
+                </div>
+            </div>
+        </header>
 
         <div id="qr-card"></div>
 
-        <div id="privacy-card"></div>
+        <div id="glasses-info-bar">
+            <span id="glasses-info-name">—</span>
+            <span id="glasses-info-count"></span>
+        </div>
 
         <div id="no-face-overlay" class="hidden">
             <svg class="overlay-grain" width="0" height="0">
@@ -46,7 +59,9 @@
             <div class="overlay-clouds"></div>
             <div class="overlay-grain-layer"></div>
             <div class="overlay-content">
-                <img class="footprints-icon" src="/shoe-prints-solid-full.svg" alt="">
+                <svg class="footprints-icon" viewBox="0 0 640 640" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <path d="M328 256C306.9 243.9 285.7 231.8 256 226.7L256 86.4C289.7 77 343.4 64 384 64C480 64 608 112 608 192C608 272 488.4 288 432 288C384 288 356 272 328 256zM160 96L208 96L208 224L160 224C124.7 224 96 195.3 96 160C96 124.7 124.7 96 160 96zM264 384C292 368 320 352 368 352C424.4 352 544 368 544 448C544 528 416 576 320 576C279.5 576 225.7 563 192 553.6L192 413.3C221.7 408.1 242.9 396 264 383.9zM96 544C60.7 544 32 515.3 32 480C32 444.7 60.7 416 96 416L144 416L144 544L96 544z"/>
+                </svg>
                 <span class="no-face-text">Ga op de voetstappen staan</span>
                 <span id="overlay-distance" class="overlay-distance hidden"></span>
             </div>
