@@ -157,7 +157,9 @@ export class GlassesRenderer {
         this.composer = new EffectComposer(this.renderer, {
             frameBufferType: THREE.HalfFloatType,
             alpha: true,
-            multisampling: 4, // 4x MSAA on the framebuffer
+            // No MSAA — the SMAA pass below handles anti-aliasing far more
+            // cheaply than 4x multisampling on a HalfFloat framebuffer.
+            multisampling: 0,
         });
 
         const renderPass = new RenderPass(this.scene, this.camera);

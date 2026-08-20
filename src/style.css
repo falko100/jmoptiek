@@ -185,8 +185,6 @@ html, body {
     pointer-events: none;
 }
 
-.overlay-grain { position: absolute; }
-
 .overlay-clouds {
     position: absolute;
     inset: 0;
@@ -211,24 +209,6 @@ html, body {
     100% {
         background-position: 100% 60%, 0% 50%, 50% 80%, 0% 0%;
     }
-}
-
-.overlay-grain-layer {
-    position: absolute;
-    inset: -50%;
-    width: 200%;
-    height: 200%;
-    filter: url(#grain-filter);
-    opacity: 0.12;
-    animation: grain-shift 0.5s steps(4) infinite;
-}
-
-@keyframes grain-shift {
-    0% { transform: translate(0, 0); }
-    25% { transform: translate(-2%, -3%); }
-    50% { transform: translate(3%, 1%); }
-    75% { transform: translate(-1%, 2%); }
-    100% { transform: translate(2%, -1%); }
 }
 
 .overlay-content {

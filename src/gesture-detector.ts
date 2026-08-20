@@ -29,7 +29,7 @@ export interface GestureDebugInfo {
 export type TriggerCallback = (action: GestureAction) => void;
 export type DebugCallback = (info: GestureDebugInfo) => void;
 
-const MAX_HANDS = 4;
+const MAX_HANDS = 2;
 
 /** Short label per gesture for the debug panel. */
 const GESTURE_LABEL: Record<GestureAction, string> = {
