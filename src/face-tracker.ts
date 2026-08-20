@@ -25,7 +25,9 @@ export class FaceTracker {
                 delegate: 'GPU',
             },
             runningMode: 'VIDEO',
-            numFaces: 2,
+            // Track a single face — MediaPipe returns the most prominent
+            // (largest/closest, clearest) one, which is who's at the mirror.
+            numFaces: 1,
             outputFaceBlendshapes: false,
             outputFacialTransformationMatrixes: true,
         });
