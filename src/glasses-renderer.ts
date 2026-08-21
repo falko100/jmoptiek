@@ -59,7 +59,7 @@ interface PreloadedModel {
 interface Transition {
     fromIndex: number;
     toIndex: number;
-    /** 1 = slide right (next), -1 = slide left (prev) */
+    /** 1 = next (slide up), -1 = prev (slide down), 0 = no slide */
     direction: number;
     startTime: number;
     fromClones: THREE.Object3D[];
@@ -242,9 +242,17 @@ export class GlassesRenderer {
 
     // ==== Model preloading ====
 
-    /** Preload all glasses models. Call once at startup. */
-    async preloadModels(urls: string[]): Promise<void> {
+    /**
+     * Preload all glasses models. Call once at startup.
+     * @param onProgress called each time a model finishes (loaded, total)
+     */
+    async preloadModels(
+        urls: string[],
+        onProgress?: (loaded: number, total: number) => void,
+    ): Promise<void> {
         const loader = new GLTFLoader();
+        const total = urls.length;
+        let loaded = 0;
 
         const promises = urls.map(async (url) => {
             const gltf = await loader.loadAsync(url);
@@ -315,6 +323,9 @@ export class GlassesRenderer {
             });
             this.scene.add(wrapper);
 
+            loaded++;
+            onProgress?.(loaded, total);
+
             return { url, template: wrapper, pivot, width: sz.x } as PreloadedModel;
         });
 
@@ -327,8 +338,8 @@ export class GlassesRenderer {
     }
 
     /**
-     * Switch to a model by index with an animated slide transition.
-     * direction: 1 = next (slide left), -1 = prev (slide right)
+     * Switch to a model by index with an animated vertical slide transition.
+     * direction: 1 = next (slide up), -1 = prev (slide down), 0 = no slide
      */
     selectModel(index: number, direction: number): void {
         if (this.models.length === 0) return;
@@ -452,10 +463,12 @@ export class GlassesRenderer {
             const t = Math.min(elapsed / TRANSITION_DURATION, 1);
             const e = ease(t);
 
-            // Old model drops down out of view, new model drops in from above
+            // Slide vertically based on direction: next (1) slides up (new
+            // enters from below, old exits up); previous (-1) slides down.
             const dist = this.canvasH;
-            outgoingYOffset = -(e * dist);     // current slides down
-            incomingYOffset = (1 - e) * dist;  // new comes from top
+            const dir = this.transition.direction;
+            outgoingYOffset = dir * e * dist;         // outgoing leaves up/down
+            incomingYOffset = -dir * (1 - e) * dist;  // incoming enters from below/above
 
             // Render outgoing (from) clones
             if (this.transition.fromIndex >= 0) {

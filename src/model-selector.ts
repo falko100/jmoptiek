@@ -33,12 +33,6 @@ export interface ModelChange {
 const MODELS: GlassesModel[] = [
     // { name: 'Brille', url: '/glasses/brille.glb' },
     {
-        name: 'S Black White Blue',
-        shortName: 'sbwb',
-        type: 'sunglasses',
-        url: '/glasses/S_BLACK WHITE_BLUE_complete.glb',
-    },
-    {
         name: 'Tommy Hilfiger 2338 Gold',
         shortName: 'th2338',
         type: 'glasses',
@@ -68,10 +62,53 @@ const MODELS: GlassesModel[] = [
         type: 'sunglasses',
         url: '/glasses/LOWDOWNXL2_201514003601H_CUT.glb',
     },
+    {
+        name: 'Carrera 1077S Dark Grey Shaded',
+        shortName: 'carrera-1077s',
+        type: 'sunglasses',
+        url: '/glasses/CARRERA 1077S DARK GREY SHADED.glb',
+    },
+    {
+        name: 'David Beckham 1229S Grey',
+        shortName: 'db1229s',
+        type: 'sunglasses',
+        url: '/glasses/DB 1229S GREY ANTIREFLEX.glb',
+    },
+    {
+        name: 'HG 1399S Grey',
+        shortName: 'hg1399s',
+        type: 'sunglasses',
+        url: '/glasses/HG 1399S - GREY.glb',
+        // Sits a bit close and clips the nose — nudge it forward.
+        defaults: { depth: 0.15 },
+    },
+    {
+        name: 'BOSS 1849',
+        shortName: 'boss-1849',
+        type: 'glasses',
+        url: '/glasses/BOSS 1849 - Kaliber 50.glb',
+    },
+    {
+        name: 'HG 1412',
+        shortName: 'hg1412',
+        type: 'glasses',
+        url: '/glasses/HG 1412 - Kaliber 54 .glb',
+    },
 ];
 
 const STORAGE_KEY = 'glasses-preview-selected-model';
 const OVERRIDES_STORAGE_KEY = 'glasses-preview-model-overrides';
+
+// Per-model overrides are keyed by list index, so any change to the model list
+// (add/remove/reorder) makes stored overrides point at the wrong model. Clear
+// them once whenever the list changes — bump this key to force a fresh reset.
+const OVERRIDES_RESET_KEY = 'glasses-preview-overrides-reset-2';
+try {
+    if (!localStorage.getItem(OVERRIDES_RESET_KEY)) {
+        localStorage.removeItem(OVERRIDES_STORAGE_KEY);
+        localStorage.setItem(OVERRIDES_RESET_KEY, '1');
+    }
+} catch { /* ignore */ }
 
 function loadSelectedIndex(): number {
     try {
@@ -112,7 +149,7 @@ const PER_MODEL_KEYS: (keyof GlassesParams)[] = [
 
 export interface ModelSelector {
     element: HTMLElement;
-    init: () => Promise<void>;
+    init: (onProgress?: (loaded: number, total: number) => void) => Promise<void>;
     next: () => void;
     prev: () => void;
     setTweakPanel: (panel: TweakPanel) => void;
@@ -167,13 +204,17 @@ export function createModelSelector(renderer: GlassesRenderer): ModelSelector {
         });
     }
 
-    /** Get the effective params for a model: defaults < model defaults < user overrides */
+    /**
+     * Effective params for a model. A per-model default declared in code wins
+     * (it is the source of truth for that key); keys without a code default
+     * fall back to the saved user override, then the global default.
+     */
     function getModelParams(idx: number): Partial<GlassesParams> {
         const modelDefaults = MODELS[idx].defaults ?? {};
         const userOverrides = modelOverrides[idx] ?? {};
         const result: Partial<GlassesParams> = {};
         for (const key of PER_MODEL_KEYS) {
-            result[key] = userOverrides[key] ?? modelDefaults[key] ?? DEFAULT_PARAMS[key];
+            result[key] = modelDefaults[key] ?? userOverrides[key] ?? DEFAULT_PARAMS[key];
         }
         return result;
     }
@@ -234,8 +275,8 @@ export function createModelSelector(renderer: GlassesRenderer): ModelSelector {
         setTweakPanel(panel: TweakPanel) {
             tweakPanel = panel;
         },
-        async init() {
-            await renderer.preloadModels(MODELS.map((m) => m.url));
+        async init(onProgress) {
+            await renderer.preloadModels(MODELS.map((m) => m.url), onProgress);
 
             // Apply initial model's params
             renderer.updateParams(getModelParams(currentIdx));

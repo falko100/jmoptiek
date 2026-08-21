@@ -156,9 +156,18 @@ async function start(): Promise<void> {
         await tracker.init();
         trackerReady = true;
 
-        statusEl.textContent = 'Loading 3D models...';
+        statusEl.textContent = 'Brillen laden…';
         const selector: ModelSelector = createModelSelector(glassesRenderer);
-        await selector.init();
+
+        // Preload progress bar
+        const preloadBar = document.getElementById('preload-bar')!;
+        const preloadFill = document.getElementById('preload-bar-fill')!;
+        preloadBar.classList.remove('hidden');
+        await selector.init((loaded, total) => {
+            preloadFill.style.width = `${Math.round((loaded / total) * 100)}%`;
+            statusEl.textContent = `Brillen laden… ${loaded}/${total}`;
+        });
+        preloadBar.classList.add('hidden');
 
         const tweakPanel = createTweakPanel(glassesRenderer);
         selector.setTweakPanel(tweakPanel);
