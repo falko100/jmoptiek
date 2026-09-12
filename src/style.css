@@ -417,6 +417,7 @@ html, body {
 
 #gesture-debug.hidden,
 #distance-debug.hidden,
+#visitor-debug.hidden,
 #tweak-panel.hidden {
     display: none;
 }
@@ -439,6 +440,31 @@ html, body {
     max-width: 260px;
     user-select: none;
     line-height: 1.5;
+}
+
+/* ---- Visitor measurement debug panel ---- */
+
+#visitor-debug {
+    position: absolute;
+    bottom: 16px;
+    right: 16px;
+    z-index: 10;
+    background: rgba(0, 0, 0, 0.8);
+    backdrop-filter: blur(8px);
+    border-radius: 10px;
+    padding: 12px 16px;
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 0.72rem;
+    color: #aaa;
+    min-width: 240px;
+    max-width: 300px;
+    user-select: none;
+    line-height: 1.5;
+    word-break: break-word;
+}
+
+#visitor-debug .gd-label {
+    width: 78px;
 }
 
 /* ---- Gesture debug panel ---- */
