@@ -14,7 +14,10 @@ HTTP-contract de backend moet bieden.
   langsloopt.
 - **Uniek gezicht** — een bezoek waarvan het gezicht niet gematcht kon worden aan
   een eerder bezoek binnen de laatste 10 minuten. Loopt iemand even weg en komt
-  hij terug, dan telt dat als `returning` en niet als nieuw gezicht.
+  hij terug, dan telt dat als `returning` en niet als nieuw gezicht. Dat venster
+  **schuift mee**: bij elke match wordt de klok opnieuw gestart, dus wie elke
+  acht minuten terugkeert blijft onbeperkt hetzelfde gezicht. Pas na 10 minuten
+  écht weg zijn levert een nieuwe telling op.
 - **Dag** — lokale dag van de kiosk (`YYYY-MM-DD`), niet UTC. Om middernacht
   wordt de dag afgesloten en begint de telling opnieuw.
 
@@ -32,9 +35,12 @@ Belangrijk voor de verwachtingen én voor de AVG:
 - Er worden geen beelden opgeslagen of verstuurd.
 - "Uniek" betekent dus: **aantal bezoeken, ontdubbeld binnen 10 minuten**. Komt
   dezelfde klant 's ochtends en 's middags terug, dan telt dat als twee.
-- De matching is bewust streng afgesteld (`matchThreshold` 0.02): twee
-  verschillende mensen samenvoegen kost een echte bezoeker, een terugkerende
-  bezoeker missen telt alleen iemand dubbel die er ook echt stond.
+- De matching staat op `matchThreshold` 0.035. De afweging: twee verschillende
+  mensen samenvoegen kost een echte bezoeker, een terugkerende bezoeker missen
+  telt iemand dubbel die er ook echt stond. Die tweede fout is goedkoper, maar
+  niet gratis — de drempel stond aanvankelijk op 0.02, de absolute ondergrens
+  van wat dezelfde persoon scoort, waardoor vrijwel elke terugkeerder als nieuw
+  gezicht werd geteld en de telling flink te hoog uitkwam.
 
 Het aantal bezoeken (`visits`) is de harde meting; de verdeling
 unieke/terugkerende is de schatting.
@@ -191,7 +197,8 @@ headers `Content-Type` en `Authorization` toe vanaf het kiosk-domein.
 | `src/visitor-counter.ts` | Bezoeken afbakenen, ontdubbelen, dagtelling. |
 | `src/stats-reporter.ts` | Wachtrij, batching, retries, verzending. |
 | `src/measurement.ts` | Koppelt teller aan verzending, bouwt de events. |
-| `src/visitor-debug.ts` | Debugpaneel (toets `v`). |
+| `src/visitor-debug.ts` | Debugpaneel met de telling (toets `v`). |
+| `src/visitor-match-debug.ts` | Debugpaneel met de matching zelf (toets `m`). |
 
 ## Afstellen
 
@@ -200,9 +207,45 @@ headers `Content-Type` en `Authorization` toe vanaf het kiosk-domein.
 | Minimale bezoekduur | `minPresenceMs` | 1200 ms |
 | Afwezigheid die bezoek afsluit | `absenceGapMs` | 2500 ms |
 | Venster voor hermatching | `revisitWindowMs` | 10 min |
-| Gevoeligheid hermatching | `matchThreshold` | 0.02 |
+| Gevoeligheid hermatching | `matchThreshold` | 0.035 |
+| Afstand tussen samples | `sampleIntervalMs` | 120 ms |
 | Frequentie dagsnapshot | `DAILY_SNAPSHOT_MS` | 5 min |
 
-Zet in de winkel een dag lang het debugpaneel (`v`) aan en vergelijk de telling
-met wat je ziet; de eerste twee knoppen bepalen of passanten meetellen, de derde
-en vierde of terugkerende klanten dubbel geteld worden.
+De eerste twee knoppen bepalen of passanten meetellen, de derde en vierde of
+terugkerende klanten dubbel geteld worden.
+
+## De drempel afstellen (toets `m`)
+
+De unieke-gezichtentelling is nooit beter dan `matchThreshold`, en die waarde
+laat zich niet beredeneren — alleen meten. Het paneel achter toets `m` laat zien
+wat er werkelijk gebeurt:
+
+**Live** — loop weg, wacht vijf seconden, kom terug. Het getal onder "Live" is
+wat een échte terugkeerder scoort. De drempel moet daarboven liggen. Laat daarna
+een collega voor de spiegel staan: hun afstand tot jou moet er duidelijk onder
+blijven. Zit er geen ruimte tussen die twee getallen, dan is de descriptor het
+probleem, niet de drempel.
+
+**Frontaal** — er wordt alleen bemonsterd bij een gezicht dat recht vooruit kijkt
+(tot 15°). Staat hier vaak "nee", dan is het bezoek gebaseerd op weinig samples
+en is de afstand navenant onbetrouwbaar. Let op: de descriptor is een verzameling
+geprojecteerde afstanden, dus draaien comprimeert ze — op 15° al zo'n 3,4%, wat
+op zichzelf meer is dan een krappe drempel toelaat.
+
+**Wat-als** — speelt de matching opnieuw af over de bezoeken in het venster, bij
+verschillende drempels. Zo zie je wat de telling gewéést zou zijn zonder op een
+nieuwe middag bezoekers te wachten.
+
+**Telling resetten** — een telling die onder de oude drempel is opgebouwd valt
+niet te vergelijken met een telling onder de nieuwe, dus begin opnieuw na elke
+wijziging. De knop onderaan het paneel wist de dagstand, de getrackte gezichten
+en de nog niet verstuurde wachtrij, en duwt de nulstand meteen naar de backend —
+anders blijft daar de oude telling staan tot de volgende bezoeker binnenloopt.
+Eén klik bewapent de knop, de tweede voert uit.
+
+De schuifregelaar past de drempel direct aan, maar geldt alleen vanaf dat moment
+en telt niet met terugwerkende kracht. Zet de waarde die je vindt vast in
+`VITE_VISIT_MATCH_THRESHOLD`, anders is hij na een herlaadbeurt weg.
+
+De descriptoren die dit paneel bewaart staan alleen in het geheugen, gaan nergens
+heen en verdwijnen na hetzelfde venster van 10 minuten als de rest.

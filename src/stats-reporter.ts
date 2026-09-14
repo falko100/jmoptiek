@@ -168,6 +168,21 @@ export class StatsReporter {
         }
     }
 
+    /**
+     * Throws away everything still queued.
+     *
+     * Only for the debug reset: those events describe visits that are being
+     * wiped anyway, so delivering them afterwards would put the old numbers
+     * straight back.
+     */
+    clearQueue(): void {
+        this.queue = [];
+        this.persist();
+        this.nextAttemptAt = 0;
+        this.retryDelayMs = BASE_RETRY_MS;
+        this.lastError = null;
+    }
+
     getState(): ReporterState {
         return {
             enabled: this.enabled,

@@ -1,6 +1,8 @@
 import type { FacePose } from './types.ts';
 import {
     computeFaceSignature,
+    headAnglesDeg,
+    isFrontal,
     medianSignature,
     signatureDistance,
 } from './face-signature.ts';
@@ -32,13 +34,25 @@ export interface VisitorCounterOptions {
     revisitWindowMs?: number;
     /**
      * Signature distance below which two visits count as the same person.
-     * Deliberately tight: merging two different visitors silently loses one,
-     * while failing to merge a returning visitor only inflates the count by
-     * someone who really was there. Tune with VITE_VISIT_MATCH_THRESHOLD.
+     *
+     * The descriptor lands around 0.02–0.04 for the same person seen twice (see
+     * face-signature.ts), so the original 0.02 sat on the very bottom of that
+     * range and missed most genuine returns — every miss adds a unique face
+     * that was never a new person. Tune with VITE_VISIT_MATCH_THRESHOLD and
+     * check the real numbers in the match debug panel (key "m").
      */
     matchThreshold?: number;
     /** Max signature samples kept per visit. */
     maxSamplesPerVisit?: number;
+    /**
+     * Minimum gap between signature samples (ms).
+     *
+     * Sampling every frame fills the buffer within half a second of somebody
+     * arriving — exactly while they are still walking up and the landmarks are
+     * at their noisiest. Spacing the samples makes the descriptor describe
+     * someone standing still instead.
+     */
+    sampleIntervalMs?: number;
     /** localStorage key for the running day tally. */
     storageKey?: string;
 }
@@ -79,15 +93,48 @@ export interface CounterState {
     samples: number;
     /** Finished visits still inside the re-visit window. */
     tracked: number;
+    /** Whether the current face is frontal enough to sample a signature. */
+    frontal: boolean;
+    /** Head angles of the current face in degrees, null when nobody is there. */
+    yawDeg: number | null;
+    pitchDeg: number | null;
     day: DayStats;
+}
+
+/**
+ * Why one finished visit was or was not merged with an earlier one.
+ *
+ * Debug-only. `signature` stays in memory and is never sent anywhere — it is
+ * here so the match debug panel can replay the matching at other thresholds.
+ */
+export interface MatchDiagnostics {
+    visitId: string;
+    at: number;
+    durationMs: number;
+    samples: number;
+    /** Distance to the closest tracked face, null when none were in the window. */
+    bestDistance: number | null;
+    matched: boolean;
+    threshold: number;
+    trackedBefore: number;
+    signature: Float32Array | null;
+}
+
+/** Live comparison of the running visit against the faces still tracked. */
+export interface LiveMatch {
+    /** False while too few frontal frames have been sampled to compare. */
+    hasSignature: boolean;
+    /** Nearest first. */
+    distances: { distance: number; ageMs: number }[];
 }
 
 const DEFAULTS = {
     minPresenceMs: 1200,
     absenceGapMs: 2500,
     revisitWindowMs: 10 * 60 * 1000,
-    matchThreshold: 0.02,
+    matchThreshold: 0.035,
     maxSamplesPerVisit: 24,
+    sampleIntervalMs: 120,
     storageKey: 'jm.visitorStats.v1',
 };
 
@@ -120,8 +167,16 @@ export class VisitorCounter {
     private lastPresentAt = 0;
     private counted = false;
     private samples: Float32Array[] = [];
+    private lastSampleAt = 0;
+    private sampleWrite = 0;
+
+    // Current-frame pose info, for the debug panels.
+    private frontal = false;
+    private yawDeg: number | null = null;
+    private pitchDeg: number | null = null;
 
     private visitListeners: ((visit: VisitRecord) => void)[] = [];
+    private matchListeners: ((info: MatchDiagnostics) => void)[] = [];
     private dayListeners: ((day: DayStats, reason: 'rollover') => void)[] = [];
 
     constructor(options: VisitorCounterOptions) {
@@ -146,16 +201,39 @@ export class VisitorCounter {
             if (this.visitStartedAt === 0) {
                 this.visitStartedAt = now;
                 this.samples = [];
+                this.sampleWrite = 0;
+                this.lastSampleAt = 0;
                 this.counted = false;
             }
             this.lastPresentAt = now;
 
-            if (this.samples.length < this.opts.maxSamplesPerVisit) {
+            const angles = headAnglesDeg(present);
+            this.yawDeg = angles.yaw;
+            this.pitchDeg = angles.pitch;
+            this.frontal = isFrontal(present);
+
+            if (now - this.lastSampleAt >= this.opts.sampleIntervalMs) {
                 const sig = computeFaceSignature(present);
-                if (sig) this.samples.push(sig);
+                if (sig) {
+                    this.lastSampleAt = now;
+                    if (this.samples.length < this.opts.maxSamplesPerVisit) {
+                        this.samples.push(sig);
+                    } else {
+                        // Ring buffer: once full, keep overwriting the oldest so
+                        // the descriptor reflects the whole visit rather than
+                        // only the moment of arrival.
+                        this.samples[this.sampleWrite] = sig;
+                        this.sampleWrite =
+                            (this.sampleWrite + 1) % this.opts.maxSamplesPerVisit;
+                    }
+                }
             }
             return;
         }
+
+        this.frontal = false;
+        this.yawDeg = null;
+        this.pitchDeg = null;
 
         if (this.visitStartedAt !== 0 && now - this.lastPresentAt > this.opts.absenceGapMs) {
             this.endVisit(now);
@@ -171,9 +249,74 @@ export class VisitorCounter {
         this.visitListeners.push(cb);
     }
 
+    /** Fires when a finished visit has been matched (or not) — debug only. */
+    onMatch(cb: (info: MatchDiagnostics) => void): void {
+        this.matchListeners.push(cb);
+    }
+
+    getMatchThreshold(): number {
+        return this.opts.matchThreshold;
+    }
+
+    /**
+     * Live tuning from the debug panel. Affects visits from here on; it does not
+     * retroactively change today's tally, and it is not persisted — set
+     * VITE_VISIT_MATCH_THRESHOLD once you have settled on a value.
+     */
+    setMatchThreshold(value: number): void {
+        this.opts.matchThreshold = value;
+    }
+
+    getRevisitWindowMs(): number {
+        return this.opts.revisitWindowMs;
+    }
+
+    /**
+     * Distance from the running visit to every face still inside the re-visit
+     * window, nearest first.
+     *
+     * This is the number worth watching while tuning: step away, come back, and
+     * read off what a real return actually scores.
+     */
+    getLiveMatch(now = Date.now()): LiveMatch {
+        const signature = medianSignature(this.samples);
+        if (!signature) return { hasSignature: false, distances: [] };
+
+        const cutoff = now - this.opts.revisitWindowMs;
+
+        return {
+            hasSignature: true,
+            distances: this.tracked
+                .filter((face) => face.lastSeenAt >= cutoff)
+                .map((face) => ({
+                    distance: signatureDistance(signature, face.signature),
+                    ageMs: now - face.lastSeenAt,
+                }))
+                .sort((a, b) => a.distance - b.distance),
+        };
+    }
+
     /** Fires when the local day flips, with the completed day's final tally. */
     onDayRollover(cb: (day: DayStats, reason: 'rollover') => void): void {
         this.dayListeners.push(cb);
+    }
+
+    /**
+     * Clears today's tally, the running visit and every tracked face.
+     *
+     * For tuning: after changing the match threshold the old count is built on
+     * the old setting, so comparing the two is meaningless until you start over.
+     */
+    reset(now = Date.now()): void {
+        this.day = emptyDay(localDateKey(now));
+        this.tracked = [];
+        this.visitStartedAt = 0;
+        this.lastPresentAt = 0;
+        this.counted = false;
+        this.samples = [];
+        this.sampleWrite = 0;
+        this.lastSampleAt = 0;
+        this.saveDay();
     }
 
     getDayStats(): DayStats {
@@ -187,6 +330,9 @@ export class VisitorCounter {
                 this.visitStartedAt === 0 ? 0 : Math.max(0, now - this.visitStartedAt),
             samples: this.samples.length,
             tracked: this.tracked.length,
+            frontal: this.frontal,
+            yawDeg: this.yawDeg,
+            pitchDeg: this.pitchDeg,
             day: this.getDayStats(),
         };
     }
@@ -207,7 +353,11 @@ export class VisitorCounter {
         this.counted = true;
 
         const signature = medianSignature(samples);
-        const returning = signature ? this.matchAndTrack(signature, now) : false;
+        const trackedBefore = this.tracked.length;
+        const match = signature
+            ? this.matchAndTrack(signature, now)
+            : { returning: false, bestDistance: null };
+        const returning = match.returning;
 
         this.day.visits += 1;
         this.day.totalDwellMs += durationMs;
@@ -227,13 +377,30 @@ export class VisitorCounter {
             sequence: this.day.visits,
         };
         for (const cb of this.visitListeners) cb(visit);
+
+        for (const cb of this.matchListeners) {
+            cb({
+                visitId: visit.visitId,
+                at: endedAt,
+                durationMs,
+                samples: samples.length,
+                bestDistance: match.bestDistance,
+                matched: returning,
+                threshold: this.opts.matchThreshold,
+                trackedBefore,
+                signature,
+            });
+        }
     }
 
     /**
      * Compare against faces still inside the re-visit window. Returns true when
      * this is somebody we already counted; either way the face is (re)tracked.
      */
-    private matchAndTrack(signature: Float32Array, now: number): boolean {
+    private matchAndTrack(
+        signature: Float32Array,
+        now: number,
+    ): { returning: boolean; bestDistance: number | null } {
         const cutoff = now - this.opts.revisitWindowMs;
         this.tracked = this.tracked.filter((t) => t.lastSeenAt >= cutoff);
 
@@ -247,12 +414,14 @@ export class VisitorCounter {
             }
         }
 
+        const bestDistance = best ? bestDist : null;
+
         if (best && bestDist <= this.opts.matchThreshold) {
             best.lastSeenAt = now;
-            return true;
+            return { returning: true, bestDistance };
         }
         this.tracked.push({ signature, lastSeenAt: now });
-        return false;
+        return { returning: false, bestDistance };
     }
 
     private rollOverIfNeeded(now: number): void {

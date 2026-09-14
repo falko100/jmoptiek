@@ -11,6 +11,7 @@ import { createDistanceDebug } from './distance-debug.ts';
 import { createCanvasButtons } from './canvas-buttons.ts';
 import { createMeasurement } from './measurement.ts';
 import { createVisitorDebug } from './visitor-debug.ts';
+import { createVisitorMatchDebug } from './visitor-match-debug.ts';
 import { drawFaceDebug } from './face-debug.ts';
 import { drawHandDebug } from './hand-debug.ts';
 import { isFacePresent } from './visitor-counter.ts';
@@ -35,6 +36,7 @@ let showFaceDebug = false;
 let latestGestureDebug: GestureDebugInfo | null = null;
 let distanceDebug: ReturnType<typeof createDistanceDebug> | null = null;
 let visitorDebug: ReturnType<typeof createVisitorDebug> | null = null;
+let matchDebug: ReturnType<typeof createVisitorMatchDebug> | null = null;
 
 const noFaceOverlay = document.getElementById('no-face-overlay')!;
 let lastFaceSeenAt = 0;
@@ -118,6 +120,7 @@ function renderLoop(): void {
 
         measurement.update(poses, frameH);
         visitorDebug?.update();
+        matchDebug?.update();
 
         const closeEnough = poses.some(p =>
             isFacePresent(p, frameH, MAX_FACE_DISTANCE, MIN_FACE_HEIGHT_FRACTION),
@@ -189,6 +192,7 @@ async function start(): Promise<void> {
         const gestureDebug = createGestureDebug();
         distanceDebug = createDistanceDebug(MAX_FACE_DISTANCE, MIN_FACE_HEIGHT_FRACTION);
         visitorDebug = createVisitorDebug(measurement);
+        matchDebug = createVisitorMatchDebug(measurement);
 
         // Bottom info bar — shows the currently selected glasses.
         const infoName = document.getElementById('glasses-info-name')!;
@@ -215,6 +219,7 @@ async function start(): Promise<void> {
         gestureDebug.element.classList.add('hidden');
         distanceDebug.setEnabled(false);
         visitorDebug.setEnabled(false);
+        matchDebug.setEnabled(false);
 
         // Toggle debug UIs with keyboard shortcuts
         window.addEventListener('keydown', (e) => {
@@ -235,6 +240,12 @@ async function start(): Promise<void> {
                 const isEnabled = !visitorDebug!.element.classList.contains('hidden');
                 visitorDebug!.setEnabled(!isEnabled);
                 visitorDebug!.update();
+            }
+            // Why the unique count is what it is — see visitor-match-debug.ts.
+            if (e.key === 'm' || e.key === 'M') {
+                const isEnabled = !matchDebug!.element.classList.contains('hidden');
+                matchDebug!.setEnabled(!isEnabled);
+                matchDebug!.update();
             }
         });
 

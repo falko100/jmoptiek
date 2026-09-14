@@ -33,6 +33,25 @@ const MAX_FRONTAL_ANGLE = 0.26; // ~15°
 
 const _euler = new THREE.Euler();
 
+/** The frontal gate in degrees, for the debug readout. */
+export const MAX_FRONTAL_ANGLE_DEG = (MAX_FRONTAL_ANGLE * 180) / Math.PI;
+
+/**
+ * Head yaw/pitch in degrees.
+ *
+ * Worth watching while tuning: the descriptor is a set of projected distances,
+ * so turning the head compresses them. At the 15° the gate still allows, the
+ * horizontal ones shrink by ~3.4% — on its own already more than a tight match
+ * threshold tolerates.
+ */
+export function headAnglesDeg(pose: FacePose): { yaw: number; pitch: number } {
+    _euler.setFromQuaternion(pose.quaternion, 'YXZ');
+    return {
+        yaw: (_euler.y * 180) / Math.PI,
+        pitch: (_euler.x * 180) / Math.PI,
+    };
+}
+
 /** True when the head is turned far enough for the geometry to be unreliable. */
 export function isFrontal(pose: FacePose): boolean {
     _euler.setFromQuaternion(pose.quaternion, 'YXZ');

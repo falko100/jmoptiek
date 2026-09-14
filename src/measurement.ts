@@ -40,6 +40,10 @@ export interface Measurement {
     getState(): { kioskId: string; counter: CounterState; reporter: ReporterState };
     /** Today's tally, e.g. to show it on screen. */
     getDayStats(): DayStats;
+    /** The counter itself — the match debug panel needs its diagnostics API. */
+    readonly counter: VisitorCounter;
+    /** Wipe today's tally here and at the backend. See the match debug panel. */
+    resetDay(): void;
 }
 
 export function createMeasurement(options: MeasurementOptions): Measurement {
@@ -114,6 +118,8 @@ export function createMeasurement(options: MeasurementOptions): Measurement {
     window.addEventListener('pagehide', onLeave);
 
     return {
+        counter,
+
         update(poses: FacePose[], frameH: number): void {
             counter.update(poses, frameH);
 
@@ -141,6 +147,19 @@ export function createMeasurement(options: MeasurementOptions): Measurement {
 
         getDayStats() {
             return counter.getDayStats();
+        },
+
+        resetDay(): void {
+            counter.reset();
+            // Queued events describe the visits being wiped; delivering them
+            // afterwards would put the old numbers straight back.
+            reporter.clearQueue();
+            lastSnapshot = '';
+            lastSnapshotAt = 0;
+            // Push the cleared tally right away. sendDaily normally only fires
+            // for a day with visits, so without this the backend would keep
+            // showing the old count until the next visitor walked in.
+            sendDaily(counter.getDayStats(), false);
         },
     };
 }
