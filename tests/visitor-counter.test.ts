@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 
 import { VisitorCounter } from '../src/visitor-counter.ts';
+import type { VisitRecord } from '../src/visitor-counter.ts';
 import { computeFaceSignature, signatureDistance } from '../src/face-signature.ts';
 import type { FacePose } from '../src/types.ts';
 
@@ -16,7 +17,7 @@ import type { FacePose } from '../src/types.ts';
  */
 
 const FRAME_H = 1080;
-const ABSENCE_GAP_MS = 2500;
+const ABSENCE_GAP_MS = 8000;
 const TEN_MINUTES = 10 * 60 * 1000;
 
 // The counter persists the day tally; give every counter its own key so tests
@@ -26,6 +27,90 @@ installLocalStorage();
 
 test('the re-visit window is the 10 minutes the dashboard claims', () => {
     assert.equal(counter().getRevisitWindowMs(), TEN_MINUTES);
+});
+
+test('a brief loss of tracking does not split one session into two visits', () => {
+    // The mirror drops the face regularly. At the old 2500 ms gap a single
+    // session was being cut into three visits five seconds apart, and each
+    // fragment then had to be re-matched by face — which is where the
+    // over-counting came from.
+    const c = counter();
+    runVisit(c, pose(1), at(0), 30_000, { close: false });
+    // Five seconds of nothing, then present again.
+    feedAbsence(c, at(0) + 30_000, 5_000);
+    runVisit(c, pose(1), at(0) + 35_000, 20_000);
+
+    const day = c.getDayStats();
+    assert.equal(day.visits, 1);
+    assert.equal(day.uniqueFaces, 1);
+});
+
+test('a real walk-away is still two visits', () => {
+    const c = counter();
+    runVisit(c, pose(1), at(0), 30_000, { close: false });
+    feedAbsence(c, at(0) + 30_000, 30_000);
+    runVisit(c, pose(1), at(0) + 60_000, 20_000);
+
+    assert.equal(c.getDayStats().visits, 2);
+});
+
+test('a visit that could not be described counts as unknown, not as new', () => {
+    // At a mirror people look at their reflection, not the camera, so a visit
+    // with no frontal frame at all is a real case. It used to be filed as a
+    // new unique face, which inflated the count for nothing.
+    const c = counter();
+    runVisit(c, pose(1, { yawDeg: 40 }), at(10));
+
+    const day = c.getDayStats();
+    assert.equal(day.visits, 1);
+    assert.equal(day.unknownFaces, 1);
+    assert.equal(day.uniqueFaces, 0);
+    assert.equal(day.returningVisits, 0);
+});
+
+test('an unknown visit is not remembered, so it cannot be matched later', () => {
+    const c = counter();
+    runVisit(c, pose(1, { yawDeg: 40 }), at(0));
+    runVisit(c, pose(1), at(1));
+
+    const day = c.getDayStats();
+    assert.equal(day.unknownFaces, 1);
+    // The second visit had a usable face but nothing to compare against.
+    assert.equal(day.uniqueFaces, 1);
+    assert.equal(day.returningVisits, 0);
+});
+
+test('a finished visit carries the evidence behind its verdict', () => {
+    const c = counter();
+    const seen: VisitRecord[] = [];
+    c.onVisit((visit) => void seen.push(visit));
+
+    runVisit(c, pose(1), at(0));
+    runVisit(c, pose(1), at(1));
+
+    assert.equal(seen.length, 2);
+
+    assert.equal(seen[0].matchOutcome, 'new');
+    assert.equal(seen[0].matchDistance, null, 'niets om mee te vergelijken');
+    assert.ok(seen[0].sampleCount > 0);
+    assert.equal(seen[0].matchThreshold, c.getMatchThreshold());
+
+    assert.equal(seen[1].matchOutcome, 'returning');
+    assert.equal(seen[1].matchDistance, 0, 'identieke fixture, dus afstand 0');
+    assert.equal(seen[1].returning, true);
+});
+
+test('an unknown visit reports zero samples and no distance', () => {
+    const c = counter();
+    const seen: VisitRecord[] = [];
+    c.onVisit((visit) => void seen.push(visit));
+
+    runVisit(c, pose(1, { yawDeg: 40 }), at(10));
+
+    assert.equal(seen[0].matchOutcome, 'unknown');
+    assert.equal(seen[0].sampleCount, 0);
+    assert.equal(seen[0].matchDistance, null);
+    assert.equal(seen[0].returning, false);
 });
 
 test('somebody walking past is not a visit', () => {
@@ -106,15 +191,19 @@ test('a return just past the window is a new unique face', () => {
     assert.equal(c.getDayStats().uniqueFaces, 2);
 });
 
-test('a turned head is never sampled, so the visit cannot be matched', () => {
-    // Outside the frontal gate no signature is built at all, and an unmatched
-    // visit always counts as a new face — a mirror people glance at sideways
-    // over-counts by construction.
+test('a turned head no longer inflates the unique count', () => {
+    // Outside the frontal gate no signature is built, so the visit cannot be
+    // matched. It used to be filed as a second unique face regardless; now it
+    // is reported as unknown, which keeps uniqueFaces a lower bound instead of
+    // a number that drifts upward every time somebody glances sideways.
     const c = counter();
     runVisit(c, pose(1), at(10));
     runVisit(c, pose(1, { yawDeg: 40 }), at(12));
 
-    assert.equal(c.getDayStats().uniqueFaces, 2);
+    const day = c.getDayStats();
+    assert.equal(day.visits, 2);
+    assert.equal(day.uniqueFaces, 1);
+    assert.equal(day.unknownFaces, 1);
 });
 
 test('the fixture itself separates people, so the tests above mean something', () => {
@@ -141,11 +230,21 @@ function runVisit(
     facePose: FacePose,
     startAt: number,
     durationMs = 3000,
+    opts: { close?: boolean } = {},
 ): void {
     for (let t = 0; t <= durationMs; t += 200) {
         counter.update([facePose], FRAME_H, startAt + t);
     }
-    counter.update([], FRAME_H, startAt + durationMs + ABSENCE_GAP_MS + 1);
+    if (opts.close !== false) {
+        counter.update([], FRAME_H, startAt + durationMs + ABSENCE_GAP_MS + 1);
+    }
+}
+
+/** Feeds `durationMs` of nobody-there without assuming the visit closes. */
+function feedAbsence(counter: VisitorCounter, startAt: number, durationMs: number): void {
+    for (let t = 0; t <= durationMs; t += 200) {
+        counter.update([], FRAME_H, startAt + t);
+    }
 }
 
 /** Minutes past 10:00 today — staying inside one local day avoids rollover. */

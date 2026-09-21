@@ -28,7 +28,19 @@ export interface VisitorCounterOptions {
     minFaceHeightFraction: number;
     /** Presence must hold this long before it counts as a visit (ms). */
     minPresenceMs?: number;
-    /** Absence this long ends the running visit (ms). */
+    /**
+     * Absence this long ends the running visit (ms).
+     *
+     * Tracking drops out regularly — someone leaning back, turning, or the
+     * detector losing a frame. At 2500 ms a single session was being cut into
+     * three visits with 5 and 7 second gaps, and each fragment then had to be
+     * re-matched by face, which is where the over-counting came from. Bridging
+     * those gaps removes the problem rather than compensating for it.
+     *
+     * Tune with VITE_VISIT_ABSENCE_GAP_MS. Going much beyond 10 s starts
+     * pulling a genuinely different visitor into the running visit, because
+     * MediaPipe tracks only the most prominent face (numFaces: 1).
+     */
     absenceGapMs?: number;
     /** How long a finished visit stays comparable for re-visit matching (ms). */
     revisitWindowMs?: number;
@@ -57,7 +69,21 @@ export interface VisitorCounterOptions {
     storageKey?: string;
 }
 
-/** One completed visit. Contains no biometric data — safe to send onward. */
+/**
+ * What the counter decided about a finished visit.
+ *
+ * `unknown` is not a failure to report — it is a visit the counter genuinely
+ * could not place, because the face was never frontal enough to describe. It
+ * used to be silently filed as a new face, which inflated the count.
+ */
+export type MatchOutcome = 'returning' | 'new' | 'unknown';
+
+/**
+ * One completed visit.
+ *
+ * Contains no biometric data — safe to send onward. The match fields are
+ * scalars describing the decision, never the descriptor itself.
+ */
 export interface VisitRecord {
     visitId: string;
     /** Local day the visit started on, as YYYY-MM-DD. */
@@ -69,13 +95,28 @@ export interface VisitRecord {
     returning: boolean;
     /** Nth visit of the day (1-based). */
     sequence: number;
+    matchOutcome: MatchOutcome;
+    /** Distance to the closest remembered face; null when there was none. */
+    matchDistance: number | null;
+    /** Signature samples this visit produced. Zero means `unknown`. */
+    sampleCount: number;
+    /** The threshold in force at the time, so the decision stays readable. */
+    matchThreshold: number;
 }
 
 /** Running tally for one local day. */
 export interface DayStats {
     date: string;
-    /** Visits whose face was not matched to an earlier visit that day. */
+    /**
+     * Visits whose face was described and not matched to an earlier one.
+     *
+     * A LOWER BOUND on the number of people: visits the counter could not
+     * describe are counted in `unknownFaces` instead, so
+     * `uniqueFaces + unknownFaces` is the upper bound.
+     */
     uniqueFaces: number;
+    /** Visits with no usable descriptor — could be new faces, could be returns. */
+    unknownFaces: number;
     /** All visits, including people who came back. */
     visits: number;
     returningVisits: number;
@@ -130,7 +171,7 @@ export interface LiveMatch {
 
 const DEFAULTS = {
     minPresenceMs: 1200,
-    absenceGapMs: 2500,
+    absenceGapMs: 8000,
     revisitWindowMs: 10 * 60 * 1000,
     matchThreshold: 0.035,
     maxSamplesPerVisit: 24,
@@ -359,10 +400,22 @@ export class VisitorCounter {
             : { returning: false, bestDistance: null };
         const returning = match.returning;
 
+        // No descriptor means the face was never frontal enough to describe —
+        // at a mirror people look at their own reflection, not the camera, so
+        // this happens for real. Such a visit used to be filed as a new unique
+        // face AND never remembered, inflating the count with nothing in
+        // return. It is now its own outcome.
+        const outcome: MatchOutcome = returning
+            ? 'returning'
+            : signature
+              ? 'new'
+              : 'unknown';
+
         this.day.visits += 1;
         this.day.totalDwellMs += durationMs;
-        if (returning) this.day.returningVisits += 1;
-        else this.day.uniqueFaces += 1;
+        if (outcome === 'returning') this.day.returningVisits += 1;
+        else if (outcome === 'new') this.day.uniqueFaces += 1;
+        else this.day.unknownFaces += 1;
         if (!this.day.firstVisitAt) this.day.firstVisitAt = new Date(startedAt).toISOString();
         this.day.lastVisitAt = new Date(endedAt).toISOString();
         this.saveDay();
@@ -375,6 +428,10 @@ export class VisitorCounter {
             durationMs,
             returning,
             sequence: this.day.visits,
+            matchOutcome: outcome,
+            matchDistance: match.bestDistance,
+            sampleCount: samples.length,
+            matchThreshold: this.opts.matchThreshold,
         };
         for (const cb of this.visitListeners) cb(visit);
 
@@ -462,6 +519,7 @@ function emptyDay(date: string): DayStats {
     return {
         date,
         uniqueFaces: 0,
+        unknownFaces: 0,
         visits: 0,
         returningVisits: 0,
         totalDwellMs: 0,

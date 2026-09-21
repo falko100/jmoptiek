@@ -55,7 +55,14 @@ export function createVisitorDebug(measurement: Measurement): {
                         ? `face ${(counter.currentDwellMs / 1000).toFixed(1)}s · ${counter.samples} samples`
                         : 'nobody'
                 }</span>`,
-                `<span class="gd-label">Unique</span> <span class="gd-val gd-hot">${day.uniqueFaces}</span> <span class="gd-val">faces today</span>`,
+                `<span class="gd-label">Unique</span> <span class="gd-val gd-hot">${day.uniqueFaces}</span> <span class="gd-val">faces today${
+                    day.unknownFaces > 0 ? ` (tot ${day.uniqueFaces + day.unknownFaces})` : ''
+                }</span>`,
+                // Visits with no usable descriptor. They are neither counted as
+                // new nor as returning, so they are the width of the error bar.
+                `<span class="gd-label">Unknown</span> <span class="gd-val ${
+                    day.unknownFaces > 0 ? 'gd-hot' : ''
+                }">${day.unknownFaces}</span> <span class="gd-val">niet te beschrijven</span>`,
                 `<span class="gd-label">Visits</span> <span class="gd-val">${day.visits} (${day.returningVisits} terug)</span>`,
                 `<span class="gd-label">Avg dwell</span> <span class="gd-val">${
                     day.visits > 0 ? (day.totalDwellMs / day.visits / 1000).toFixed(1) : '0.0'

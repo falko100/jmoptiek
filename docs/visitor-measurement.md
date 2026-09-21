@@ -9,7 +9,7 @@ HTTP-contract de backend moet bieden.
 - **Bezoek (`visit`)** — één aaneengesloten periode dat iemand voor de spiegel
   staat, dicht genoeg bij om brillen te kunnen passen (dezelfde regel als de
   "Ga op de voetstappen staan"-overlay: ≤ 95 cm, of het gezicht vult ≥ 22% van
-  de hoogte van het beeld). Korte trackingdips worden overbrugd; 2,5 seconde weg
+  de hoogte van het beeld). Korte trackingdips worden overbrugd; 8 seconden weg
   sluit het bezoek af. Korter dan 1,2 seconde telt niet mee — dat is iemand die
   langsloopt.
 - **Uniek gezicht** — een bezoek waarvan het gezicht niet gematcht kon worden aan
@@ -31,7 +31,9 @@ persoon als zojuist", niet voor het herkennen van iemand over dagen heen.
 Belangrijk voor de verwachtingen én voor de AVG:
 
 - De vingerafdrukken staan **alleen in het geheugen** van de kiosk, verdwijnen na
-  10 minuten en gaan **nooit** naar de backend.
+  10 minuten en gaan **nooit** naar de backend. Ze overleven dus ook geen
+  herlaad of herstart van de browser — zie hieronder wat dat voor de telling
+  betekent.
 - Er worden geen beelden opgeslagen of verstuurd.
 - "Uniek" betekent dus: **aantal bezoeken, ontdubbeld binnen 10 minuten**. Komt
   dezelfde klant 's ochtends en 's middags terug, dan telt dat als twee.
@@ -44,6 +46,94 @@ Belangrijk voor de verwachtingen én voor de AVG:
 
 Het aantal bezoeken (`visits`) is de harde meting; de verdeling
 unieke/terugkerende is de schatting.
+
+#### De tien minuten lopen van eind tot eind
+
+Het venster wordt gemeten vanaf het **einde** van het ene bezoek tot het
+**einde** van het volgende, niet tot het begin. `matchAndTrack` zet `lastSeenAt`
+op het moment dat een bezoek wordt afgesloten, en vergelijkt bij het afsluiten
+van het volgende bezoek tegen `now - revisitWindowMs`.
+
+Gevolg: **een lang bezoek verbruikt zijn eigen duur uit het venster.** Wie twee
+minuten voor de spiegel staat, heeft nog acht minuten over om gematcht te worden
+aan wat er daarvóór was.
+
+Dat is geen theorie; het is in de meetdata terug te zien:
+
+- Bezoek 2 eindigde om 10:56:59. Bezoek 3 liep van 11:06:26 tot 11:08:25.
+- Bij het afsluiten van bezoek 3 lag de grens op 10:58:27. Bezoek 2 was toen net
+  verlopen en werd niet meer vergeleken.
+- Was er vanaf de *start* van bezoek 3 gerekend, dan had de grens op 10:56:26
+  gelegen en was bezoek 2 er nog binnen gevallen.
+
+De twee minuten die bezoek 3 zelf duurde zijn dus precies wat de vergelijking
+onmogelijk maakte.
+
+#### Een herlaad wist het gezichtsgeheugen
+
+`saveDay()` bewaart alleen de dagtelling in localStorage. De vingerafdrukken
+staan uitsluitend in het geheugen en `tracked` begint bij elke herlaad leeg. Dat
+is opzet: descriptoren persistent opslaan zou de belofte hierboven breken.
+
+Het gevolg is wel dat **het eerste bezoek na elke herlaad gegarandeerd als nieuw
+gezicht telt**, ook als dezelfde persoon tien seconden eerder nog voor de
+spiegel stond. Er is simpelweg niets om mee te vergelijken.
+
+Zo'n bezoek is te herkennen: uitkomst `new` met een **lege** `matchDistance`.
+Die is alleen leeg als er geen enkel onthouden gezicht was — bij het allereerste
+bezoek van de dag, of bij het eerste na een herstart.
+
+Voor een winkel die dagen achtereen draait is dit verwaarloosbaar. Tijdens het
+afstellen niet: wie vaak herlaadt, telt bij elke herlaad één uniek gezicht extra,
+om een reden die niets met de drempel te maken heeft. Meet dus liever één ronde
+in één sessie, of laat bij de analyse de rijen met een lege afstand buiten
+beschouwing.
+
+#### Alleen de kiosk, niet de backend
+
+Dit geldt uitsluitend voor de kiosk. Het dashboard verversen, de backend
+herstarten of de database opnieuw opstarten raakt de telling niet: de beslissing
+"nieuw of terugkerend" valt op de kiosk vóór er iets verstuurd wordt, en de
+backend slaat die uitkomst alleen op en telt hem op. Er wordt daar nergens zelf
+uniekheid berekend — geen `DISTINCT`, geen groepering op gezicht — en
+descriptoren komen er sowieso nooit aan.
+
+**De kiosk beslist, de backend registreert.**
+
+Andersom geldt er wél iets: de backend kan beïnvloeden wat je te zien krijgt,
+niet wat er geteld is. Antwoordt hij met 400, 413 of 422, dan gooit de kiosk die
+batch weg en zijn die bezoekregels kwijt. De dagstand wordt opnieuw gestuurd en
+corrigeert de totalen, maar de losse regels komen niet terug. Datzelfde geldt
+voor rijen die handmatig uit de database verwijderd worden.
+
+## Beperkingen van de meting
+
+Twee dingen die geen defect zijn, maar wel bepalen wat de cijfers waard zijn.
+
+### Twee mensen tegelijk zijn één bezoek
+
+`src/face-tracker.ts` draait met `numFaces: 1`: MediaPipe volgt uitsluitend het
+meest prominente gezicht. Staan er twee mensen voor de spiegel, dan levert dat
+één bezoek op, en degene die het dichtst bij komt kan de tracking halverwege
+overnemen. De descriptor wordt dan een mengsel van twee gezichten en matcht
+nergens op — zo'n bezoek telt dus als nieuw gezicht.
+
+Voor een winkel waar mensen samen een bril uitzoeken is dat geen randgeval. Het
+is ook de reden dat `visits` een hardere meting is dan de verdeling
+uniek/terugkerend: het aantal keren dat er iemand stond klopt, wie dat waren is
+de schatting.
+
+### Meerdere tabbladen delen dezelfde opslag
+
+De wachtrij (`jm.statsQueue.v1`), de dagtelling (`jm.visitorStats.v1`) en de
+kiosk-id (`jm.kioskId`) staan in `localStorage` zonder enige coördinatie tussen
+tabbladen. Twee open kiosk-tabbladen op dezelfde machine overschrijven elkaars
+staat: een event dat het ene tabblad al afgeleverd heeft kan door het andere
+teruggezet worden, en beide tellen onafhankelijk door op dezelfde dagtelling.
+
+In productie draait één browser in kioskmodus, dus daar speelt dit niet. Tijdens
+ontwikkelen wel — en het is een plausibele verklaring als de metingen niet
+overeenkomen met wat je hebt zien gebeuren. Houd één tabblad open.
 
 ## Configuratie
 
@@ -99,12 +189,42 @@ dezelfde batch zitten.
 | `durationMs` | int | Hoe lang iemand voor de spiegel stond. |
 | `returning` | bool | `true` = hetzelfde gezicht als kort daarvoor. |
 | `sequence` | int | Hoeveelste bezoek van die dag (1-based). |
+| `matchOutcome` | `returning`\|`new`\|`unknown` | Wat de teller besloot, zie hieronder. |
+| `matchDistance` | float\|null | Afstand tot het dichtstbijzijnde onthouden gezicht. |
+| `sampleCount` | int | Aantal samples; 0 betekent `unknown`. |
+| `matchThreshold` | float | Drempel die op dat moment gold. |
+
+De laatste vier velden zijn **optioneel**: een kiosk op een oudere build stuurt
+ze niet mee en die batch moet gewoon geaccepteerd worden. Het zijn scalairen die
+de beslissing beschrijven — nooit de descriptor zelf, dus er gaat nog steeds geen
+biometrisch gegeven naar de backend.
+
+`matchOutcome` onderscheidt twee dingen die onder `returning: false` op één hoop
+lagen:
+
+| Waarde | Betekenis |
+| --- | --- |
+| `returning` | Descriptor gematcht binnen de drempel. |
+| `new` | Descriptor gebouwd, geen match in het venster. |
+| `unknown` | Geen bruikbare descriptor — het gezicht was nooit frontaal genoeg. |
+
+Een `unknown`-bezoek verhoogt `uniqueFaces` niet. Het wordt ook niet onthouden
+voor latere vergelijkingen, want er is niets om te onthouden.
 
 ### `type: "daily"`
 
-De lopende dagstand, elke 5 minuten opnieuw gestuurd zolang er iets wijzigt, en
-bij het afsluiten van de dag met `final: true`. Bedoeld als **upsert op
-(`kioskId`, `date`)** — de laatste versie wint, `final: true` is de definitieve.
+De lopende dagstand, verstuurd **zodra hij verandert** — dat is precies wanneer
+een bezoek afloopt — plus elke 5 minuten als hartslag voor een dag waarop niets
+gebeurt, en bij het afsluiten van de dag met `final: true`. Bedoeld als **upsert
+op (`kioskId`, `date`)**: de laatste versie wint, `final: true` is de
+definitieve.
+
+Het bezoek en de bijgewerkte dagstand worden in dezelfde POST verstuurd
+(`sendDebounceMs` in `src/stats-reporter.ts` verzamelt wat in hetzelfde moment
+in de wachtrij komt). Dat is geen detail: de bezoekenlijst leest `kiosk_visits`
+en het dashboard leest `kiosk_days`, dus zouden ze los aankomen, dan spreken die
+twee schermen elkaar tegen zolang het verschil bestaat. Eerder ging de dagstand
+alleen elke 5 minuten mee en liep het dashboard zichtbaar achter.
 
 ```json
 {
@@ -112,6 +232,7 @@ bij het afsluiten van de dag met `final: true`. Bedoeld als **upsert op
   "kioskId": "jm-optiek-winkel-1",
   "date": "2026-09-12",
   "uniqueFaces": 17,
+  "unknownFaces": 2,
   "visits": 21,
   "returningVisits": 4,
   "totalDwellMs": 214000,
@@ -123,8 +244,11 @@ bij het afsluiten van de dag met `final: true`. Bedoeld als **upsert op
 }
 ```
 
-Hiermee heb je het antwoord op "hoeveel verschillende gezichten vandaag" direct
-als `uniqueFaces`, zonder zelf te hoeven aggregeren. Wil je het liever zelf
+`uniqueFaces` is een **ondergrens** op het aantal mensen en
+`uniqueFaces + unknownFaces` een **bovengrens**. Toon die twee samen; alleen de
+ondergrens laten zien presenteert een schatting als een telling. Loopt
+`unknownFaces` op, dan kijken mensen te schuin voor de camera en is de hele
+telling die dag minder waard. Wil je het liever zelf
 berekenen, dan kan dat ook uit de visit-events:
 
 ```sql
@@ -205,14 +329,26 @@ headers `Content-Type` en `Authorization` toe vanaf het kiosk-domein.
 | Knop | Waar | Standaard |
 | --- | --- | --- |
 | Minimale bezoekduur | `minPresenceMs` | 1200 ms |
-| Afwezigheid die bezoek afsluit | `absenceGapMs` | 2500 ms |
+| Afwezigheid die bezoek afsluit | `absenceGapMs` | 8000 ms |
 | Venster voor hermatching | `revisitWindowMs` | 10 min |
 | Gevoeligheid hermatching | `matchThreshold` | 0.035 |
 | Afstand tussen samples | `sampleIntervalMs` | 120 ms |
-| Frequentie dagsnapshot | `DAILY_SNAPSHOT_MS` | 5 min |
+| Hartslag dagsnapshot | `DAILY_SNAPSHOT_MS` | 5 min |
+| Samenvoegen van verzendingen | `sendDebounceMs` | 250 ms |
 
 De eerste twee knoppen bepalen of passanten meetellen, de derde en vierde of
 terugkerende klanten dubbel geteld worden.
+
+`absenceGapMs` stond op 2500 ms en dat bleek de grootste bron van overtelling:
+de spiegel verliest het gezicht regelmatig een paar seconden, waardoor één sessie
+in drie bezoeken uiteenviel die elk opnieuw herkend moesten worden. Elke
+herkenning is een kans om ernaast te zitten. Op 8000 ms worden haperingen van
+5–9 seconden overbrugd en blijft een echt weggelopen bezoeker een nieuw bezoek.
+Veel verder dan 10 seconden zou ik niet gaan: dan wordt een ánder persoon die
+binnen dat gat aankomt bij het lopende bezoek getrokken, want MediaPipe volgt
+maar één gezicht tegelijk (`numFaces: 1`).
+
+Instelbaar met `VITE_VISIT_ABSENCE_GAP_MS`.
 
 ## De drempel afstellen (toets `m`)
 
@@ -235,6 +371,10 @@ op zichzelf meer is dan een krappe drempel toelaat.
 **Wat-als** — speelt de matching opnieuw af over de bezoeken in het venster, bij
 verschillende drempels. Zo zie je wat de telling gewéést zou zijn zonder op een
 nieuwe middag bezoekers te wachten.
+
+Let op dat ook dit paneel bij een herlaad leeg begint, om dezelfde reden als
+hierboven: het geheugen waar het uit put is weg. Herlaad dus aan het begin van
+een meetronde en daarna niet meer.
 
 **Telling resetten** — een telling die onder de oude drempel is opgebouwd valt
 niet te vergelijken met een telling onder de nieuwe, dus begin opnieuw na elke

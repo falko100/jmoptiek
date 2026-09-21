@@ -31,6 +31,15 @@ export interface ReporterOptions {
     batchSize?: number;
     /** How often the queue is checked (ms). */
     flushIntervalMs?: number;
+    /**
+     * How long a send waits for its companions before going out (ms).
+     *
+     * A finished visit queues two events at once — the visit and the updated
+     * day tally. Flushing on the first would leave the second behind until the
+     * next interval, so the dashboard and the visit list would disagree for
+     * fifteen seconds. Collecting them into one request keeps them atomic.
+     */
+    sendDebounceMs?: number;
     /** Hard cap on the queue; oldest events are dropped past it. */
     maxQueue?: number;
     /** localStorage key for the durable queue. */
@@ -49,6 +58,7 @@ export interface ReporterState {
 const DEFAULTS = {
     batchSize: 50,
     flushIntervalMs: 15_000,
+    sendDebounceMs: 250,
     maxQueue: 500,
     storageKey: 'jm.statsQueue.v1',
 };
@@ -68,6 +78,7 @@ export class StatsReporter {
     private readonly opts: Required<ReporterOptions>;
     private queue: QueuedEvent[] = [];
     private timer: ReturnType<typeof setInterval> | null = null;
+    private sendTimer: ReturnType<typeof setTimeout> | null = null;
     private flushing = false;
     private nextAttemptAt = 0;
     private retryDelayMs = BASE_RETRY_MS;
@@ -109,7 +120,21 @@ export class StatsReporter {
             this.queue.splice(0, this.queue.length - this.opts.maxQueue);
         }
         this.persist();
-        void this.flush();
+        this.flushSoon();
+    }
+
+    /**
+     * Flush shortly, once. Events queued in the same moment then travel in one
+     * request instead of the first one leaving alone and the rest waiting for
+     * the next interval.
+     */
+    private flushSoon(): void {
+        if (this.sendTimer !== null) return;
+
+        this.sendTimer = setTimeout(() => {
+            this.sendTimer = null;
+            void this.flush();
+        }, this.opts.sendDebounceMs);
     }
 
     async flush(opts: { force?: boolean } = {}): Promise<void> {
@@ -197,6 +222,8 @@ export class StatsReporter {
     dispose(): void {
         if (this.timer !== null) clearInterval(this.timer);
         this.timer = null;
+        if (this.sendTimer !== null) clearTimeout(this.sendTimer);
+        this.sendTimer = null;
     }
 
     // -----------------------------------------------------------------------
