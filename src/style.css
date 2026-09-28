@@ -417,6 +417,7 @@ html, body {
 
 #gesture-debug.hidden,
 #distance-debug.hidden,
+#visitor-debug.hidden,
 #tweak-panel.hidden {
     display: none;
 }
@@ -439,6 +440,31 @@ html, body {
     max-width: 260px;
     user-select: none;
     line-height: 1.5;
+}
+
+/* ---- Visitor measurement debug panel ---- */
+
+#visitor-debug {
+    position: absolute;
+    bottom: 16px;
+    right: 16px;
+    z-index: 10;
+    background: rgba(0, 0, 0, 0.8);
+    backdrop-filter: blur(8px);
+    border-radius: 10px;
+    padding: 12px 16px;
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 0.72rem;
+    color: #aaa;
+    min-width: 240px;
+    max-width: 300px;
+    user-select: none;
+    line-height: 1.5;
+    word-break: break-word;
+}
+
+#visitor-debug .gd-label {
+    width: 78px;
 }
 
 /* ---- Gesture debug panel ---- */
@@ -624,4 +650,92 @@ html, body {
 
 .tweak-reset:hover {
     background: #444;
+}
+
+/* ---- Visitor match debug panel (key "m") ---- */
+
+#match-debug {
+    position: absolute;
+    bottom: 16px;
+    left: 16px;
+    z-index: 10;
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(8px);
+    border-radius: 10px;
+    padding: 12px 16px;
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 0.72rem;
+    color: #aaa;
+    min-width: 300px;
+    max-width: 340px;
+    max-height: 70vh;
+    overflow-y: auto;
+    user-select: none;
+    line-height: 1.5;
+}
+
+#match-debug.hidden {
+    display: none;
+}
+
+#match-debug .md-row {
+    display: flex;
+    gap: 8px;
+    align-items: baseline;
+}
+
+#match-debug .md-row .gd-label {
+    flex: 0 0 82px;
+}
+
+#match-debug .md-heading {
+    margin-top: 10px;
+    padding-top: 6px;
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 0.64rem;
+}
+
+#match-debug .md-tuner {
+    margin-bottom: 8px;
+}
+
+#match-debug .md-tuner input[type='range'] {
+    width: 100%;
+    margin-top: 4px;
+    accent-color: #ffb020;
+}
+
+#match-debug .md-note {
+    color: #6d6d6d;
+}
+
+#match-debug .md-warn {
+    color: #ff7b6b;
+}
+
+#match-debug .md-reset {
+    display: block;
+    width: 100%;
+    margin-top: 10px;
+    padding: 6px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 6px;
+    background: transparent;
+    color: #aaa;
+    font-family: inherit;
+    font-size: 0.68rem;
+    cursor: pointer;
+}
+
+#match-debug .md-reset:hover {
+    border-color: rgba(255, 255, 255, 0.35);
+    color: #ddd;
+}
+
+#match-debug .md-reset-primed {
+    border-color: #ff7b6b;
+    color: #ff7b6b;
 }

@@ -9,8 +9,12 @@ import { createModelSelector, type ModelSelector } from './model-selector.ts';
 import { createGestureDebug } from './gesture-debug.ts';
 import { createDistanceDebug } from './distance-debug.ts';
 import { createCanvasButtons } from './canvas-buttons.ts';
+import { createMeasurement } from './measurement.ts';
+import { createVisitorDebug } from './visitor-debug.ts';
+import { createVisitorMatchDebug } from './visitor-match-debug.ts';
 import { drawFaceDebug } from './face-debug.ts';
 import { drawHandDebug } from './hand-debug.ts';
+import { isFacePresent } from './visitor-counter.ts';
 import type { GestureDebugInfo } from './gesture-detector.ts';
 
 // DOM elements
@@ -31,6 +35,8 @@ let gestureReady = false;
 let showFaceDebug = false;
 let latestGestureDebug: GestureDebugInfo | null = null;
 let distanceDebug: ReturnType<typeof createDistanceDebug> | null = null;
+let visitorDebug: ReturnType<typeof createVisitorDebug> | null = null;
+let matchDebug: ReturnType<typeof createVisitorMatchDebug> | null = null;
 
 const noFaceOverlay = document.getElementById('no-face-overlay')!;
 let lastFaceSeenAt = 0;
@@ -42,6 +48,13 @@ const MAX_FACE_DISTANCE = 95;
 // when it simply fills enough of the frame (forehead-to-chin ≥ this fraction of
 // the visible height) — tune if passers-by trigger it or kids still don't.
 const MIN_FACE_HEIGHT_FRACTION = 0.22;
+
+// Counts how many different faces the mirror sees per day and ships the numbers
+// to the backend. Runs on the same presence rule as the overlay above.
+const measurement = createMeasurement({
+    maxDistanceCm: MAX_FACE_DISTANCE,
+    minFaceHeightFraction: MIN_FACE_HEIGHT_FRACTION,
+});
 
 // ---------------------------------------------------------------------------
 // Canvas sizing — full screen, video covers with aspect ratio preserved
@@ -105,10 +118,12 @@ function renderLoop(): void {
         const frameH = webcamRenderer.coverDrawH || CAMERA_SIZE;
         distanceDebug?.update(poses, frameH);
 
-        const closeEnough = poses.some(
-            p =>
-                p.distance <= MAX_FACE_DISTANCE ||
-                p.faceHeight >= frameH * MIN_FACE_HEIGHT_FRACTION,
+        measurement.update(poses, frameH);
+        visitorDebug?.update();
+        matchDebug?.update();
+
+        const closeEnough = poses.some(p =>
+            isFacePresent(p, frameH, MAX_FACE_DISTANCE, MIN_FACE_HEIGHT_FRACTION),
         );
         if (closeEnough) {
             lastFaceSeenAt = now;
@@ -176,6 +191,8 @@ async function start(): Promise<void> {
         const canvasButtons = createCanvasButtons();
         const gestureDebug = createGestureDebug();
         distanceDebug = createDistanceDebug(MAX_FACE_DISTANCE, MIN_FACE_HEIGHT_FRACTION);
+        visitorDebug = createVisitorDebug(measurement);
+        matchDebug = createVisitorMatchDebug(measurement);
 
         // Bottom info bar — shows the currently selected glasses.
         const infoName = document.getElementById('glasses-info-name')!;
@@ -201,6 +218,8 @@ async function start(): Promise<void> {
         tweakPanel.element.classList.add('hidden');
         gestureDebug.element.classList.add('hidden');
         distanceDebug.setEnabled(false);
+        visitorDebug.setEnabled(false);
+        matchDebug.setEnabled(false);
 
         // Toggle debug UIs with keyboard shortcuts
         window.addEventListener('keydown', (e) => {
@@ -216,6 +235,17 @@ async function start(): Promise<void> {
             if (e.key === 'g' || e.key === 'G') {
                 const isEnabled = !distanceDebug!.element.classList.contains('hidden');
                 distanceDebug!.setEnabled(!isEnabled);
+            }
+            if (e.key === 'v' || e.key === 'V') {
+                const isEnabled = !visitorDebug!.element.classList.contains('hidden');
+                visitorDebug!.setEnabled(!isEnabled);
+                visitorDebug!.update();
+            }
+            // Why the unique count is what it is — see visitor-match-debug.ts.
+            if (e.key === 'm' || e.key === 'M') {
+                const isEnabled = !matchDebug!.element.classList.contains('hidden');
+                matchDebug!.setEnabled(!isEnabled);
+                matchDebug!.update();
             }
         });
 
